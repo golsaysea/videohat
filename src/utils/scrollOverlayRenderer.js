@@ -37,9 +37,38 @@ const drawText = (ctx, text, x, y, letterSpacing = 0, stroke = false) => {
 
 const alignX = (ctx, text, boxX, boxW, align = 'center', letterSpacing = 0) => {
   const width = measureText(ctx, text, letterSpacing);
-  if (align === 'left') return boxX;
+  if (align === 'left' || align === 'justify') return boxX;
   if (align === 'right') return boxX + boxW - width;
   return boxX + (boxW - width) / 2;
+};
+
+const getJustifyParts = (text) => String(text || '').trim().split(/(\s+)/).filter((part) => part.trim().length > 0);
+
+const drawAlignedText = (ctx, text, boxX, boxW, align = 'center', y = 0, letterSpacing = 0, stroke = false) => {
+  if (align !== 'justify') {
+    drawText(ctx, text, alignX(ctx, text, boxX, boxW, align, letterSpacing), y, letterSpacing, stroke);
+    return;
+  }
+
+  const parts = getJustifyParts(text);
+  if (parts.length < 2) {
+    drawText(ctx, text, boxX, y, letterSpacing, stroke);
+    return;
+  }
+
+  const spacing = number(letterSpacing);
+  const partsWidth = parts.reduce((sum, part) => sum + measureText(ctx, part, spacing), 0);
+  const gap = (boxW - partsWidth) / (parts.length - 1);
+  if (!Number.isFinite(gap) || gap < 0) {
+    drawText(ctx, text, boxX, y, letterSpacing, stroke);
+    return;
+  }
+
+  let cursorX = boxX;
+  for (const part of parts) {
+    drawText(ctx, part, cursorX, y, spacing, stroke);
+    cursorX += measureText(ctx, part, spacing) + gap;
+  }
 };
 
 const roundRect = (ctx, x, y, w, h, r) => {
@@ -256,8 +285,7 @@ export const drawScrollOverlay = (ctx, overlay, currentTime, canvasW = 1080, can
   const drawBodyLines = (targetCtx, stroke = false) => {
     let y = bodyY - clipY + (ov.scroll_title && !ov.scroll_title_fixed ? titleBlockH : 0);
     for (const line of lines) {
-      const x = alignX(targetCtx, line, textBoxX - clipX, textWidth, ov.align, letterSpacing);
-      drawText(targetCtx, line, x, y, letterSpacing, stroke);
+      drawAlignedText(targetCtx, line, textBoxX - clipX, textWidth, ov.align, y, letterSpacing, stroke);
       y += lineHeight;
     }
   };
@@ -293,9 +321,8 @@ export const drawScrollOverlay = (ctx, overlay, currentTime, canvasW = 1080, can
     layerCtx.lineWidth = Math.max(0, number(ov.scroll_title_stroke_width, 4));
     let y = bodyY - clipY;
     for (const line of titleLines) {
-      const x = alignX(layerCtx, line, 0, clipW, ov.scroll_title_align || ov.align, letterSpacing);
-      if (layerCtx.lineWidth > 0) drawText(layerCtx, line, x, y, letterSpacing, true);
-      drawText(layerCtx, line, x, y, letterSpacing, false);
+      if (layerCtx.lineWidth > 0) drawAlignedText(layerCtx, line, 0, clipW, ov.scroll_title_align || ov.align, y, letterSpacing, true);
+      drawAlignedText(layerCtx, line, 0, clipW, ov.scroll_title_align || ov.align, y, letterSpacing, false);
       y += titleFontSize * 1.2;
     }
     layerCtx.restore();
@@ -343,9 +370,8 @@ export const drawScrollOverlay = (ctx, overlay, currentTime, canvasW = 1080, can
       ? number(ov.scroll_title_y)
       : clipY + number(ov.feather_top_offset);
     for (const line of titleLines) {
-      const x = alignX(ctx, line, titleBoxX, clipW, ov.scroll_title_align || ov.align, letterSpacing);
-      if (ctx.lineWidth > 0) drawText(ctx, line, x, y, letterSpacing, true);
-      drawText(ctx, line, x, y, letterSpacing, false);
+      if (ctx.lineWidth > 0) drawAlignedText(ctx, line, titleBoxX, clipW, ov.scroll_title_align || ov.align, y, letterSpacing, true);
+      drawAlignedText(ctx, line, titleBoxX, clipW, ov.scroll_title_align || ov.align, y, letterSpacing, false);
       y += titleFontSize * 1.2;
     }
     ctx.restore();

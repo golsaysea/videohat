@@ -99,6 +99,7 @@
 
           <Panel title="正文样式">
             <SelectField v-model="overlayState.text_align" label="正文对齐" :options="alignOptions" />
+            <SelectField v-model="overlayState.body_case" label="正文大小写" :options="caseOptions" />
             <SliderControl v-model="overlayState.fontsize" label="正文字号" :min="20" :max="140" />
             <SliderControl v-model="overlayState.font_weight" label="正文粗细" :min="100" :max="900" :step="100" />
             <SliderControl v-model="overlayState.text_width" label="折行宽度" :min="300" :max="1080" :step="10" />
@@ -119,6 +120,7 @@
 
           <Panel title="标题样式">
             <SelectField v-model="overlayState.scroll_title_align" label="标题对齐" :options="alignOptions" />
+            <SelectField v-model="overlayState.title_case" label="标题大小写" :options="caseOptions" />
             <SliderControl v-model="overlayState.scroll_title_fontsize" label="标题字号" :min="20" :max="140" />
             <SliderControl v-model="overlayState.scroll_title_font_weight" label="标题粗细" :min="100" :max="900" :step="100" />
             <SliderControl v-model="overlayState.scroll_title_text_width" label="标题宽度" :min="300" :max="1080" :step="10" />
@@ -319,6 +321,9 @@ const overlayState = reactive(createScrollOverlay({
   fontsize: 64,
   font_weight: 800,
   text_align: 'center',
+  align: 'center',
+  body_case: 'upper',
+  scroll_uppercase: false,
   text_width: 900,
   line_spacing: 8,
   scroll_letter_spacing: 0,
@@ -333,6 +338,8 @@ const overlayState = reactive(createScrollOverlay({
   scroll_title_fontsize: 48,
   scroll_title_font_weight: 900,
   scroll_title_align: 'center',
+  title_case: 'upper',
+  scroll_title_uppercase: false,
   scroll_title_text_width: 860,
   scroll_title_line_spacing: 0,
   scroll_title_letter_spacing: 0,
@@ -363,6 +370,7 @@ const overlayState = reactive(createScrollOverlay({
   bg_border_width: 3,
   bg_border_style: 'solid',
   bg_border_opacity: 100,
+  scroll_x_anchor: 'center',
   scroll_from_x: 540,
   scroll_to_x: 540,
   scroll_from_y: 1800,
@@ -413,6 +421,17 @@ const qualityOptions = [
   { value: 'medium', label: '中画质 5 Mbps' },
   { value: 'low', label: '快速 2.5 Mbps' },
 ];
+const alignOptions = [
+  { value: 'center', label: '居中对齐' },
+  { value: 'left', label: '左对齐' },
+  { value: 'right', label: '右对齐' },
+  { value: 'justify', label: '两端对齐' },
+];
+const caseOptions = [
+  { value: 'upper', label: '全部大写' },
+  { value: 'preserve', label: '保持原文' },
+  { value: 'lower', label: '全部小写' },
+];
 
 const activeDuration = computed(() => {
   if (exportOptions.durationMode === 'custom') return Math.max(1, exportOptions.customDuration || 1);
@@ -436,13 +455,22 @@ const formatDuration = (value) => {
   const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
   return `${mins}:${secs}`;
 };
+const applyTextCase = (value, mode = 'preserve') => {
+  const text = String(value || '');
+  if (mode === 'upper') return text.toUpperCase();
+  if (mode === 'lower') return text.toLowerCase();
+  return text;
+};
+
 const centerOverlayDefaults = () => {
   overlayState.x = 40;
   overlayState.y = 400;
   overlayState.w = 1000;
   overlayState.h = 1120;
   overlayState.text_align = 'center';
+  overlayState.align = 'center';
   overlayState.scroll_title_align = 'center';
+  overlayState.scroll_x_anchor = 'center';
   overlayState.text_width = 900;
   overlayState.scroll_title_text_width = 860;
   overlayState.scroll_from_x = 540;
@@ -580,8 +608,14 @@ const drawVideoBackground = (ctx, canvas, video) => {
 const normalizeOverlayForNative = () => {
   const normalized = {
     ...JSON.parse(JSON.stringify(overlayState)),
+    content: applyTextCase(overlayState.content, overlayState.body_case),
+    scroll_title: applyTextCase(overlayState.scroll_title, overlayState.title_case),
     text_align: overlayState.text_align || overlayState.align || 'center',
+    align: overlayState.text_align || overlayState.align || 'center',
     scroll_title_align: overlayState.scroll_title_align || overlayState.text_align || 'center',
+    scroll_uppercase: false,
+    scroll_title_uppercase: false,
+    scroll_x_anchor: overlayState.scroll_x_anchor || 'center',
     bg_opacity: overlayState.bg_opacity <= 1 ? Math.round(overlayState.bg_opacity * 255) : overlayState.bg_opacity,
     bg_padding_top: overlayState.bg_padding_top ?? overlayState.bg_pt ?? 46,
     bg_padding_bottom: overlayState.bg_padding_bottom ?? overlayState.bg_pb ?? 46,
@@ -601,11 +635,17 @@ const drawPreview = () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawVideoBackground(ctx, canvas, videoEl.value);
 
+  const overlayForRender = normalizeOverlayForNative();
+  const needsFallbackRenderer = overlayForRender.text_align === 'justify' || overlayForRender.scroll_title_align === 'justify';
   try {
-    ReelsOverlay.drawOverlay(ctx, normalizeOverlayForNative(), previewTime.value, canvas.width, canvas.height);
+    if (needsFallbackRenderer) {
+      drawScrollOverlay(ctx, overlayForRender, previewTime.value, canvas.width, canvas.height);
+    } else {
+      ReelsOverlay.drawOverlay(ctx, overlayForRender, previewTime.value, canvas.width, canvas.height);
+    }
   } catch (error) {
     console.warn('[ReelsOverlay] fallback renderer:', error);
-    drawScrollOverlay(ctx, overlayState, previewTime.value, canvas.width, canvas.height);
+    drawScrollOverlay(ctx, overlayForRender, previewTime.value, canvas.width, canvas.height);
   }
 };
 
