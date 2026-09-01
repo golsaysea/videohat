@@ -1,57 +1,120 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>Web视频自动化工坊</title>
-    <!-- 引入 Web 版本的 FFmpeg -->
+    <meta charset="UTF-8">
+    <title>Web视频自动化工坊 - 进阶版</title>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+    <style>
+        body { background: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
+        .panel { background: #1e1e1e; padding: 25px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .controls { display: grid; gap: 15px; margin: 20px 0; }
+        button { background: #007acc; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        #progress-container { width: 100%; background: #333; border-radius: 4px; overflow: hidden; margin-top: 15px; display: none; }
+        #progress-bar { width: 0%; height: 8px; background: #00ff00; transition: width 0.2s; }
+        #log-console { background: #000; color: #00ff00; padding: 15px; font-family: Consolas, monospace; height: 150px; overflow-y: auto; border-radius: 4px; font-size: 12px; margin-top: 20px; }
+        video { width: 100%; margin-top: 20px; border-radius: 8px; display: none; }
+    </style>
 </head>
-<body style="background:#1e1e1e; color:white; font-family:sans-serif; padding:30px;">
-    <h3>导入素材进行本地压制</h3>
-    <input type="file" id="uploader" accept="video/*">
-    <button id="start-btn" disabled>执行压制队列</button>
-    <p id="message" style="color:#00ff00;">等待导入媒体素材...</p>
-    <video id="output-video" controls style="display:none; max-width:400px; border:2px solid #555;"></video>
+<body>
+    <div class="panel">
+        <h2>自动化处理队列</h2>
+        <input type="file" id="uploader" accept="video/*" multiple>
+        
+        <div class="controls">
+            <label><input type="checkbox" id="chk-vertical"> 强制裁剪为 9:16 竖屏 (自然运镜适配)</label>
+            <label><input type="checkbox" id="chk-4grid"> 启用四宫格分屏布局 (需上传4个视频)</label>
+            <label><input type="checkbox" id="chk-tts"> 触发远程 Edge-TTS 配音接口</label>
+        </div>
+
+        <button id="start-btn" disabled>执行 WebAssembly 渲染</button>
+        
+        <div id="progress-container"><div id="progress-bar"></div></div>
+        <div id="log-console">等待任务...</div>
+        <video id="output-video" controls></video>
+    </div>
 
     <script>
         const { createFFmpeg, fetchFile } = FFmpeg;
-        // 开启 log 以在浏览器 F12 控制台查看底层压制日志
-        const ffmpeg = createFFmpeg({ log: true });
+        const ffmpeg = createFFmpeg({ log: false });
         
-        const uploader = document.getElementById('uploader');
-        const startBtn = document.getElementById('start-btn');
-        const message = document.getElementById('message');
-        const outputVideo = document.getElementById('output-video');
-        let videoFile;
+        const logConsole = document.getElementById('log-console');
+        const progressBar = document.getElementById('progress-bar');
+        const progressContainer = document.getElementById('progress-container');
+        
+        function log(msg) {
+            logConsole.innerHTML += `<div>> ${msg}</div>`;
+            logConsole.scrollTop = logConsole.scrollHeight;
+        }
 
-        uploader.addEventListener('change', (e) => {
-            videoFile = e.target.files[0];
-            startBtn.disabled = false;
-            message.innerHTML = `已加载: ${videoFile.name}，点击执行`;
+        document.getElementById('uploader').addEventListener('change', (e) => {
+            const files = e.target.files;
+            document.getElementById('start-btn').disabled = files.length === 0;
+            log(`已加载 ${files.length} 个媒体文件。`);
         });
 
-        startBtn.addEventListener('click', async () => {
-            startBtn.disabled = true;
-            message.innerHTML = "正在加载 WebAssembly 引擎...";
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            const files = document.getElementById('uploader').files;
+            const isVertical = document.getElementById('chk-vertical').checked;
+            const is4Grid = document.getElementById('chk-4grid').checked;
             
-            if (!ffmpeg.isLoaded()) await ffmpeg.load();
+            document.getElementById('start-btn').disabled = true;
+            progressContainer.style.display = 'block';
             
-            message.innerHTML = "正在压制中，请查看 F12 控制台获取进度...";
-            
-            // 将本地文件挂载到 WASM 内存中
-            ffmpeg.FS('writeFile', videoFile.name, await fetchFile(videoFile));
-            
-            // 执行压制参数 (例如快速预设、调整码率)
-            await ffmpeg.run('-i', videoFile.name, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', 'output.mp4');
-            
-            message.innerHTML = "自动化队列处理完成！";
-            
-            // 从内存中读取合成后的文件并渲染到播放器
+            if (!ffmpeg.isLoaded()) {
+                log("初始化 FFmpeg.wasm 引擎...");
+                await ffmpeg.load();
+            }
+
+            // 监听进度回调
+            ffmpeg.setProgress(({ ratio }) => {
+                const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+                progressBar.style.width = `${percent}%`;
+            });
+
+            log("将文件写入浏览器虚拟内存...");
+            for (let i = 0; i < files.length; i++) {
+                ffmpeg.FS('writeFile', `input${i}.mp4`, await fetchFile(files[i]));
+            }
+
+            let ffmpegArgs = [];
+            if (is4Grid && files.length >= 4) {
+                log("构建四宫格 hstack/vstack 复合滤镜...");
+                ffmpegArgs = [
+                    '-i', 'input0.mp4', '-i', 'input1.mp4', '-i', 'input2.mp4', '-i', 'input3.mp4',
+                    '-filter_complex', '[0:v][1:v]hstack[top];[2:v][3:v]hstack[bottom];[top][bottom]vstack[v]',
+                    '-map', '[v]', '-c:v', 'libx264', '-preset', 'ultrafast', 'output.mp4'
+                ];
+            } else if (isVertical) {
+                log("应用 9:16 竖屏裁剪滤镜...");
+                ffmpegArgs = [
+                    '-i', 'input0.mp4', 
+                    '-vf', 'crop=ih*(9/16):ih', 
+                    '-c:v', 'libx264', '-preset', 'ultrafast', 'output.mp4'
+                ];
+            } else {
+                log("执行标准视频转码...");
+                ffmpegArgs = ['-i', 'input0.mp4', '-c:v', 'libx264', '-preset', 'ultrafast', 'output.mp4'];
+            }
+
+            log(`执行命令: ffmpeg ${ffmpegArgs.join(' ')}`);
+            await ffmpeg.run(...ffmpegArgs);
+
+            log("渲染完成，正在清理内存并生成预览...");
             const data = ffmpeg.FS('readFile', 'output.mp4');
             const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
             
-            outputVideo.src = videoUrl;
-            outputVideo.style.display = 'block';
-            startBtn.disabled = false;
+            const videoEl = document.getElementById('output-video');
+            videoEl.src = videoUrl;
+            videoEl.style.display = 'block';
+            
+            // 内存释放：防止浏览器崩溃
+            for (let i = 0; i < files.length; i++) {
+                ffmpeg.FS('unlink', `input${i}.mp4`);
+            }
+            ffmpeg.FS('unlink', 'output.mp4');
+            
+            document.getElementById('start-btn').disabled = false;
         });
     </script>
 </body>
