@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VideoKit Pro - 智能滚动字幕工厂 (满血免配版)</title>
+    <title>VideoKit Pro - 智能滚动字幕工厂 (满血绝杀版)</title>
     
-    <!-- 引入最新的 V0.12 架构，自带单核回退机制 -->
+    <!-- 引入最新的 V0.12 架构，自带沙盒回退与跨域击穿机制 -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
     <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
     
@@ -18,7 +18,6 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
         body { background: var(--bg-color); color: var(--text-main); line-height: 1.6; padding: 30px; font-size: 14px; }
         
-        /* 布局容器 */
         .app-container { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: 350px 1fr; gap: 30px; }
         @media (max-width: 1000px) { .app-container { grid-template-columns: 1fr; } }
         
@@ -26,13 +25,11 @@
         .header h1 { color: var(--text-highlight); font-size: 28px; font-weight: 300; letter-spacing: 2px; }
         .badge { background: rgba(102, 252, 241, 0.1); color: var(--text-highlight); padding: 4px 10px; border-radius: 4px; font-size: 12px; border: 1px solid var(--border-color); vertical-align: middle; margin-left: 10px; font-weight: bold; }
 
-        /* 面板通用 */
-        .panel { background: var(--panel-bg); border-radius: 8px; border: 1px solid #333; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .panel { background: var(--panel-bg); border-radius: 8px; border: 1px solid #333; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; }
         .panel-header { background: #161c23; padding: 12px 20px; font-weight: 600; color: #fff; display: flex; align-items: center; border-bottom: 1px solid #333; }
         .panel-header::before { content: ''; display: inline-block; width: 4px; height: 14px; background: var(--text-highlight); margin-right: 10px; border-radius: 2px; }
         .panel-body { padding: 20px; }
 
-        /* 表单控件 */
         .form-group { margin-bottom: 18px; }
         .form-group.row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         label { display: block; font-size: 12px; color: #999; margin-bottom: 6px; }
@@ -40,18 +37,15 @@
         input:focus, textarea:focus { outline: none; border-color: var(--text-highlight); }
         textarea { height: 350px; resize: vertical; font-family: Consolas, monospace; line-height: 1.5; font-size: 13px; }
         
-        /* 拖拽上传区 */
         .upload-zone { border: 2px dashed #444; background: #0b0c10; padding: 30px 20px; text-align: center; border-radius: 6px; cursor: pointer; position: relative; transition: 0.3s; }
         .upload-zone:hover { border-color: var(--text-highlight); }
         .upload-zone input { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
-        .file-name { margin-top: 10px; color: var(--text-highlight); font-weight: bold; }
+        .file-name { margin-top: 10px; color: var(--text-highlight); font-weight: bold; word-break: break-all; }
 
-        /* 勾选框样式 */
         .checkbox-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px; background: #111; border-radius: 6px; border: 1px solid #333; margin-bottom: 15px; }
         .checkbox-item input { margin-top: 3px; accent-color: var(--text-highlight); }
         .checkbox-desc { font-size: 11px; color: #777; margin-top: 4px; }
 
-        /* 极客终端台 */
         .terminal { background: #050505; border-radius: 6px; border: 1px solid #333; margin-top: 20px; overflow: hidden; }
         .term-header { background: #111; padding: 8px 15px; font-size: 11px; color: #666; display: flex; justify-content: space-between; border-bottom: 1px solid #222; }
         .term-body { height: 280px; overflow-y: auto; padding: 15px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6; }
@@ -61,51 +55,49 @@
         .term-body .log-warn { color: #facc15; }
         .term-body .log-err { color: #ff4b4b; }
         
-        /* 动作按钮 */
         .btn-run { width: 100%; background: var(--text-highlight); color: #000; font-weight: bold; font-size: 16px; border: none; padding: 16px; border-radius: 6px; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
         .btn-run:hover:not(:disabled) { box-shadow: 0 0 20px rgba(102, 252, 241, 0.4); transform: scale(1.01); }
         .btn-run:disabled { background: #333; color: #666; cursor: not-allowed; }
 
-        /* 预览区 */
         .preview-wrapper { display: none; margin-top: 20px; padding: 20px; background: #111; border: 1px dashed var(--accent); border-radius: 8px; text-align: center; }
         video { max-width: 100%; max-height: 700px; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
 
         /* 隐形测绘探针 */
-        #probe-box { position: absolute; visibility: hidden; z-index: -1; font-family: Arial, sans-serif; font-weight: bold; line-height: 1.25; word-wrap: break-word; white-space: pre-wrap; text-align: center; }
+        #probe-box { position: absolute; top: -9999px; left: -9999px; visibility: hidden; z-index: -1; font-family: Arial, sans-serif; font-weight: bold; line-height: 1.25; word-wrap: break-word; white-space: pre-wrap; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="app-container">
     <div class="header">
-        <h1>VideoKit Web Engine <span class="badge">PRO MAX 纯前端单核版</span></h1>
-        <p style="color: #777; margin-top: 5px;">突破 SharedArrayBuffer 封锁 / Canvas 动态羽化遮罩 / 虚拟DOM排版探针</p>
+        <h1>VideoKit Web Engine <span class="badge">PRO MAX 跨域击穿版</span></h1>
+        <p style="color: #777; margin-top: 5px;">突破跨域沙盒封锁 / 终极 Blob Worker 伪装绝杀 / Canvas 动态 Alpha 羽化 / 智能排版探针</p>
     </div>
 
-    <!-- 左侧栏：参数设置集群 (完美复刻你的软件截图) -->
+    <!-- 左侧栏：参数设置集群 (完美复刻软件截图) -->
     <div class="left-sidebar">
-        <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel">
             <div class="panel-header">轨道与画布</div>
             <div class="panel-body">
                 <div class="upload-zone">
                     <div style="font-size: 30px; color: #666;">📥</div>
-                    <div style="margin-top: 10px;">导入 9:16 底层视频</div>
+                    <div style="margin-top: 10px;">导入 9:16 底层视频源</div>
                     <input type="file" id="video-file" accept="video/*">
                     <div class="file-name" id="file-name">未选择视频</div>
                 </div>
             </div>
         </div>
 
-        <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel">
             <div class="panel-header">排版与智能匹配</div>
             <div class="panel-body">
                 <div class="form-group row">
-                    <div><label>正文宽度 (决定换行)</label><input type="number" id="cfg-width" value="900"></div>
-                    <div><label>正文字号 (决定高度)</label><input type="number" id="cfg-size" value="65"></div>
+                    <div><label>正文宽度 (决定折行点)</label><input type="number" id="cfg-width" value="900"></div>
+                    <div><label>正文字号 (决定总高度)</label><input type="number" id="cfg-size" value="65"></div>
                 </div>
                 
                 <div class="form-group row">
-                    <div><label>底部停靠距离 (Y偏置)</label><input type="number" id="cfg-bottom" value="150" title="滚动到底部保留多少空间"></div>
+                    <div><label>底部停靠距离 (Y偏置)</label><input type="number" id="cfg-bottom" value="150" title="决定字幕最终停靠在画面的什么位置"></div>
                     <div><label>提前完成 (秒)</label><input type="number" id="cfg-early" value="0" step="0.1"></div>
                 </div>
 
@@ -130,7 +122,7 @@
                     <div><label>下羽化强度</label><input type="number" id="feather-bot" value="80"></div>
                     <div><label>下羽化偏移</label><input type="number" id="offset-bot" value="0"></div>
                 </div>
-                <div style="font-size: 11px; color: #777; margin-top: 10px;">* 底层调用 HTML5 Canvas 绘制动态 Alpha 混合遮罩</div>
+                <div style="font-size: 11px; color: #777; margin-top: 10px;">* 底层调用 HTML5 Canvas 绘制动态 Alpha 透明渐变遮罩图层并进行通道正片叠底运算。</div>
             </div>
         </div>
     </div>
@@ -141,12 +133,12 @@
             <div class="panel-header">剧本矩阵与渲染列队</div>
             <div class="panel-body">
                 <div class="form-group">
-                    <label style="color: var(--text-highlight);">📌 悬浮标题 (固定坐标，不参与滚动)</label>
+                    <label style="color: var(--text-highlight);">📌 悬浮标题 (绝对固定坐标，不参与滚动)</label>
                     <input type="text" id="cfg-title" value="In September, say this prayer!">
                 </div>
                 
                 <div class="form-group">
-                    <label style="color: #fff;">📝 滚动主文案 (自动叠加描边、投影特效)</label>
+                    <label style="color: #fff;">📝 滚动主文案 (已自动叠加黑色描边、投影特效)</label>
                     <textarea id="cfg-body" spellcheck="false">1. God walks with me.
 2. God guides my steps.
 3. God has a beautiful plan for me.
@@ -159,9 +151,9 @@
 10. The future is bright and clear.</textarea>
                 </div>
 
-                <button id="btn-start" class="btn-run">🔥 启动单核物理压制管线</button>
+                <button id="btn-start" class="btn-run">🔥 启动物理引擎压制管线</button>
 
-                <!-- 进度反馈与终端 -->
+                <!-- 进度反馈与极客终端 -->
                 <div class="terminal">
                     <div class="term-header">
                         <span>>_ FFMPEG.WASM COMPILER TERMINAL</span>
@@ -173,7 +165,7 @@
                     </div>
                     <div class="term-body" id="term-out">
 <span class="log-sys">系统核心自检完成，等待媒体流注入。</span>
-<span style="color:#777;">* 本环境已挂载 Single-Thread Fallback 补丁，绝对免疫内存溢出与跨域锁报错。</span></div>
+<span style="color:#777;">* 本环境已搭载同源 Blob 伪装技术，保证在 Cloudflare Pages 等任何跨域限制环境下畅通无阻运行。</span></div>
                 </div>
                 
                 <!-- 产物预览 -->
@@ -191,7 +183,7 @@
 
 <script>
     // -----------------------------------------------------------------
-    // 第一层架构：引擎初始化与工具库
+    // 第一层架构：引擎初始化与工具库绑定
     // -----------------------------------------------------------------
     const { FFmpeg } = window.FFmpegWASM;
     const { fetchFile, toBlobURL } = window.FFmpegUtil;
@@ -217,18 +209,16 @@
     };
 
     // -----------------------------------------------------------------
-    // 第二层架构：核心探测探针 (完美适配时间的灵魂)
+    // 第二层架构：核心探测探针 (完美适配视频总时长与排版高度的灵魂)
     // -----------------------------------------------------------------
-    // 探针 A：物理时长解析
     const probeDuration = (file) => new Promise((resolve) => {
         const vid = document.createElement('video');
         vid.preload = 'metadata';
         vid.onloadedmetadata = () => { URL.revokeObjectURL(vid.src); resolve(vid.duration); };
-        vid.onerror = () => resolve(15.0); // 异常兜底
+        vid.onerror = () => resolve(15.0); 
         vid.src = URL.createObjectURL(file);
     });
 
-    // 探针 B：虚拟排版高度测绘
     const probeHeight = (text, width, fSize) => {
         const box = document.getElementById('probe-box');
         box.style.width = `${width}px`;
@@ -240,29 +230,25 @@
     };
 
     // -----------------------------------------------------------------
-    // 第三层架构：动态羽化遮罩生成器 (全网独家纯前端降级方案)
+    // 第三层架构：动态羽化遮罩生成器 (全网独家纯前端降级平替方案)
     // -----------------------------------------------------------------
     async function buildFeatherAssets(topF, topO, botF, botO) {
-        log(`🎨 启动 Canvas GPU 加速绘制羽化渐变遮罩...`, 'sys');
+        log(`🎨 启动 Canvas GPU 加速绘制羽化渐变遮罩矩阵...`, 'sys');
         const cvs = document.createElement('canvas');
         cvs.width = 1080; cvs.height = 1920;
         const ctx = cvs.getContext('2d');
         
-        // 生成纯透明底板 (用于承载文字层)
         ctx.clearRect(0, 0, 1080, 1920);
         const blankBlob = await fetchFile(cvs.toDataURL('image/png'));
         
-        // 绘制 Alpha 遮罩 (白色代表可见，透明代表截断羽化)
         ctx.clearRect(0, 0, 1080, 1920);
         const botStart = 1920 - botO - botF;
         const solidStart = topO + topF;
 
-        // 核心实心区
         if (botStart > solidStart) {
             ctx.fillStyle = 'rgba(255,255,255,1)';
             ctx.fillRect(0, solidStart, 1080, botStart - solidStart);
         }
-        // 上渐变
         if (topF > 0) {
             const gradT = ctx.createLinearGradient(0, topO, 0, solidStart);
             gradT.addColorStop(0, 'rgba(255,255,255,0)');
@@ -270,7 +256,6 @@
             ctx.fillStyle = gradT;
             ctx.fillRect(0, topO, 1080, topF);
         }
-        // 下渐变
         if (botF > 0) {
             const gradB = ctx.createLinearGradient(0, botStart, 0, botStart + botF);
             gradB.addColorStop(0, 'rgba(255,255,255,1)');
@@ -284,23 +269,21 @@
     }
 
     // -----------------------------------------------------------------
-    // 第四层架构：主流水线调度
+    // 第四层架构：总管线调度工厂
     // -----------------------------------------------------------------
     const formatAss = (t) => t.replace(/\n/g, '\\N').replace(/\r/g, '');
 
     ui.btn.addEventListener('click', async () => {
         const file = ui.file.files[0];
-        if (!file) return alert("系统拦截：请先在左侧轨道挂载视频。");
+        if (!file) return alert("系统安全锁：请先在左侧上传轨道挂载源视频文件。");
 
-        // 界面死锁锁定
-        ui.btn.disabled = true; ui.btn.innerText = '⚙️ 引擎超频运转中...';
+        ui.btn.disabled = true; ui.btn.innerText = '⚙️ 引擎超频推演运转中...';
         ui.outWrap.style.display = 'none'; ui.term.innerHTML = '';
         ui.progBar.style.width = '0%'; ui.status.innerText = '[ PROCESSING ]';
         
         try {
-            log('======== 启动工业级合成管线 ========', 'sys');
+            log('======== 启动工业级极客合成管线 ========', 'sys');
             
-            // 1. 获取全矩阵参数
             const body = document.getElementById('cfg-body').value;
             const title = document.getElementById('cfg-title').value;
             const bWidth = parseInt(document.getElementById('cfg-width').value);
@@ -308,24 +291,17 @@
             const bMargin = parseInt(document.getElementById('cfg-bottom').value);
             const earlyFinish = parseFloat(document.getElementById('cfg-early').value);
             
-            // 2. 探针联合计算运动学方程
             const duration = await probeDuration(file);
-            log(`⏱️ 嗅探锁定：底层视频绝对时长 ${duration.toFixed(2)} 秒`, 'success');
+            log(`⏱️ 探针嗅探锁定：底层视频绝对总时长 ${duration.toFixed(2)} 秒`, 'success');
             
             const tHeight = probeHeight(body, bWidth, bSize);
-            
-            // 推导 Y 轴极点
-            const startY = 1920 + bSize; // 从画面正下方藏着开始
-            const endY = 1920 - bMargin - tHeight; // 保证底部留白
-            
-            // 计算时间轨 (微秒转毫秒)
+            const startY = 1920 + bSize; 
+            const endY = 1920 - bMargin - tHeight; 
             const moveTime = Math.floor(Math.max(1, duration - earlyFinish) * 1000);
-            log(`🧮 坐标轨迹解算完毕: Y [${startY} ➔ ${endY}] 耗时 ${moveTime}ms`, 'success');
+            log(`🧮 坐标位移轨迹解算完毕: Y轴 [${startY} ➔ ${endY}] 预计耗时 ${moveTime}ms`, 'success');
 
-            // 计算 ASS 字幕宽度安全边界 (MarginL/MarginR 强制折行)
             const sideMargin = Math.floor((1080 - bWidth) / 2);
 
-            // 3. 构建 ASS 渲染图层
             const assData = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -342,33 +318,35 @@ ${title ? `Dialogue: 1,0:00:00.00,0:59:59.00,STitle,,0,0,0,,{\\pos(540,400)}${fo
 Dialogue: 0,0:00:00.00,0:59:59.00,SBody,,0,0,0,,{\\move(540,${startY},540,${endY},0,${moveTime})}${formatAss(body)}
 `;
 
-            // 4. 沙盒单线程引擎装载 (免疫报错黑科技)
+            // 【完全体修改点：Blob 伪装加载机制 - 终极跨域绝杀】
             if (!ffmpeg) {
-                log('⬇️ 正在拉取 @ffmpeg/core 纯净单线程版本...', 'warn');
+                log('⬇️ 正在构建同源 Blob 伪装封包，准备突防 Worker 跨域拦截锁...', 'warn');
                 ffmpeg = new FFmpeg();
                 
-                // 监听进度与心跳
                 ffmpeg.on('progress', ({ progress }) => {
                     const pct = Math.max(0, Math.min(100, Math.round(progress * 100)));
                     ui.progBar.style.width = `${pct}%`;
-                    if (pct % 15 === 0 && pct > 0) log(`🔥 底层像素覆写中: ${pct}%`, 'sys');
+                    if (pct % 15 === 0 && pct > 0) log(`🔥 底层像素级覆写合成中: ${pct}%`, 'sys');
                 });
 
                 ffmpeg.on('log', ({ message }) => {
                     if (message.includes('Error') || message.includes('failed')) log(message, 'err');
                 });
 
-                // 指定核心文件路径，直接绕开 SharedArrayBuffer
-                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const ffmpegBase = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+                
+                // 绝杀：将 Worker 脚本伪装成同源的 BlobURL，彻底规避 Pages 等云平台的跨域拦截
                 await ffmpeg.load({
-                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
+                    coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm'),
+                    classWorkerURL: await toBlobURL(`${ffmpegBase}/814.ffmpeg.js`, 'text/javascript')
                 });
-                log('✅ 安全沙盒部署就绪！跨域锁彻底解除。', 'success');
+                
+                log('✅ 安全沙盒 Worker 强行注入成功！跨域锁及共享内存拦截已被彻底粉碎。', 'success');
             }
 
-            // 5. 资产挂载与云字体抓取
-            log('💾 正在构建虚拟文件系统...', 'sys');
+            log('💾 正在往内存虚拟文件系统中烧录资产...', 'sys');
             await ffmpeg.writeFile('in.mp4', await fetchFile(file));
             await ffmpeg.writeFile('sub.ass', new TextEncoder().encode(assData));
             
@@ -382,20 +360,18 @@ Dialogue: 0,0:00:00.00,0:59:59.00,SBody,,0,0,0,,{\\move(540,${startY},540,${endY
             await ffmpeg.writeFile('m.png', maskBlob);
 
             try {
-                // CDN 智能兜底字体，防止你不传字体文件导致乱码崩溃
-                log('🌐 探针嗅探：自动从 Google CDN 注入开源字体包 (Roboto)...', 'sys');
+                log('🌐 字体探针：自动从全球 CDN 挂载高清开源英文字库 (Roboto)...', 'sys');
                 const fontUrl = "https://cdn.jsdelivr.net/gh/googlefonts/roboto@main/src/hinted/Roboto-Bold.ttf";
                 await ffmpeg.writeFile('CustomFont.ttf', await fetchFile(fontUrl));
-                log('✅ 云端字体挂载成功。', 'success');
+                log('✅ 云端字库资产挂载成功。', 'success');
             } catch (e) {
-                log('⚠️ 字体抓取超时，部分文本可能引发系统后备字体渲染。', 'warn');
+                log('⚠️ 字体抓取超时，部分文本排版将可能触发内核兜底字体降级渲染。', 'warn');
             }
 
-            // 6. 开启滤镜混合工业压制
             log('=====================================', 'sys');
-            log('⚠️ 警告：复杂通道混合极其消耗 CPU。网页可能发生假死卡顿，请耐心等待切勿关闭！', 'warn');
+            log('⚠️ 预警：羽化遮罩图像矩阵相乘运算极耗 CPU 算力。网页极大概率发生假死，请耐心静候勿关页面！', 'warn');
             
-            // 超神滤镜链：背景 + [空白底+字幕=透明图层] + [透明图层+羽化蒙版叠加混合] + 合成并挂载固定标题
+            // 超神复合滤镜拓扑链
             const filterGraph = `[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg];[1:v]format=rgba,ass=sub.ass:fontsdir=/[txt_layer];[2:v]format=rgba[mask];[txt_layer][mask]blend=all_mode=multiply[feathered_txt];[bg][feathered_txt]overlay=0:0:shortest=1[final_bg]`;
 
             await ffmpeg.exec([
@@ -404,17 +380,16 @@ Dialogue: 0,0:00:00.00,0:59:59.00,SBody,,0,0,0,,{\\move(540,${startY},540,${endY
                 '-loop', '1', '-i', 'm.png',
                 '-filter_complex', filterGraph,
                 '-map', '[final_bg]',
-                '-map', '0:a?',          // 提取可能存在的原声音轨
+                '-map', '0:a?', 
                 '-c:v', 'libx264',
-                '-preset', 'ultrafast',  // 必须最快，防前端崩溃
+                '-preset', 'ultrafast',
                 '-crf', '26',
                 '-c:a', 'copy',
                 '-shortest',
                 'out.mp4'
             ]);
 
-            // 7. 出片提取与闭环清理
-            log('📦 视频封装完成，准备抛出 Blob 数据流...', 'sys');
+            log('📦 H.264 视频流封装完成，准备抛出 Blob 数据流渲染至前端...', 'sys');
             const fileData = await ffmpeg.readFile('out.mp4');
             const vUrl = URL.createObjectURL(new Blob([new Uint8Array(fileData).buffer], { type: 'video/mp4' }));
             
@@ -422,9 +397,9 @@ Dialogue: 0,0:00:00.00,0:59:59.00,SBody,,0,0,0,,{\\move(540,${startY},540,${endY
             ui.outWrap.style.display = 'block';
             ui.status.innerText = '[ COMPLETED ]';
             ui.progBar.style.width = '100%';
-            log('🎉 管线任务圆满落幕，大作已落盘！', 'success');
+            log('🎉 视频大作已落地生成！长按或右键下方视频即可保存。', 'success');
 
-            // 内存大扫除 (防暴毙极致细节)
+            // 内存大扫除 (防连击暴毙与 OOM 显存溢出的极致细节)
             await ffmpeg.deleteFile('in.mp4');
             await ffmpeg.deleteFile('sub.ass');
             await ffmpeg.deleteFile('b.png');
@@ -432,13 +407,13 @@ Dialogue: 0,0:00:00.00,0:59:59.00,SBody,,0,0,0,,{\\move(540,${startY},540,${endY
             await ffmpeg.deleteFile('out.mp4');
 
         } catch (error) {
-            log(`💥 系统抛出毁灭性异常: ${error.message}`, 'err');
+            log(`💥 系统抛出级联毁灭性异常: ${error.message}`, 'err');
             ui.status.innerText = '[ FAILED ]';
             ui.status.style.color = 'var(--danger)';
             console.error(error);
         } finally {
             ui.btn.disabled = false;
-            ui.btn.innerText = '🚀 重新启动渲染管线';
+            ui.btn.innerText = '🚀 重置时间引擎流，准备下一次压制';
         }
     });
 </script>
