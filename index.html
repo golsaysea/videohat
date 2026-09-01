@@ -1,124 +1,58 @@
-import sys
-import subprocess
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
-                             QFileDialog, QTextEdit, QLabel, QCheckBox, QHBoxLayout)
-from PyQt5.QtCore import QThread, pyqtSignal
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Web视频自动化工坊</title>
+    <!-- 引入 Web 版本的 FFmpeg -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+</head>
+<body style="background:#1e1e1e; color:white; font-family:sans-serif; padding:30px;">
+    <h3>导入素材进行本地压制</h3>
+    <input type="file" id="uploader" accept="video/*">
+    <button id="start-btn" disabled>执行压制队列</button>
+    <p id="message" style="color:#00ff00;">等待导入媒体素材...</p>
+    <video id="output-video" controls style="display:none; max-width:400px; border:2px solid #555;"></video>
 
-class AutomationWorker(QThread):
-    log_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(bool)
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        // 开启 log 以在浏览器 F12 控制台查看底层压制日志
+        const ffmpeg = createFFmpeg({ log: true });
+        
+        const uploader = document.getElementById('uploader');
+        const startBtn = document.getElementById('start-btn');
+        const message = document.getElementById('message');
+        const outputVideo = document.getElementById('output-video');
+        let videoFile;
 
-    def __init__(self, input_paths, output_dir, enable_tts, enable_4grid):
-        super().__init__()
-        self.input_paths = input_paths
-        self.output_dir = output_dir
-        self.enable_tts = enable_tts
-        self.enable_4grid = enable_4grid
+        uploader.addEventListener('change', (e) => {
+            videoFile = e.target.files[0];
+            startBtn.disabled = false;
+            message.innerHTML = `已加载: ${videoFile.name}，点击执行`;
+        });
 
-    def run(self):
-        try:
-            if self.enable_tts:
-                self.log_signal.emit(">>> 开始执行 Edge-TTS 批量配音流水线...")
-                self.generate_voiceover()
-
-            if self.enable_4grid and len(self.input_paths) >= 4:
-                self.log_signal.emit(">>> 开始合成四宫格分屏视频...")
-                self.build_4grid_layout()
-            else:
-                self.log_signal.emit(">>> 执行标准视频压制与拼接...")
-                self.process_standard_video()
-
-            self.log_signal.emit("\n>>> 全部自动化队列处理完成！")
-            self.finished_signal.emit(True)
-
-        except Exception as e:
-            self.log_signal.emit(f"\n>>> 运行中断: {str(e)}")
-            self.finished_signal.emit(False)
-
-    def generate_voiceover(self):
-        # Edge-TTS 底层调用预留
-        # edge-tts --voice zh-CN-XiaoxiaoNeural --text "测试" --write-media out.mp3
-        self.log_signal.emit("TTS 音频资源生成完毕，已存入临时目录待对齐。")
-
-    def build_4grid_layout(self):
-        # FFmpeg 四宫格滤镜复合命令 (hstack/vstack)
-        # filter_complex = "[0:v][1:v]hstack[top];[2:v][3:v]hstack[bottom];[top][bottom]vstack"
-        self.log_signal.emit("加载 4 个视频源并应用 hstack/vstack 滤镜完成排版。")
-
-    def process_standard_video(self):
-        self.log_signal.emit("执行常规渲染与 CC 字幕对齐检查...")
-
-class VideoWorkshopApp(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.input_videos = []
-        self.initUI()
-
-    def initUI(self):
-        self.setWindowTitle('自动化配音与合成工坊')
-        self.resize(650, 500)
-        layout = QVBoxLayout()
-
-        self.info_label = QLabel("等待导入媒体素材 (支持多选)...")
-        layout.addWidget(self.info_label)
-
-        # 核心业务模块开关
-        opt_layout = QHBoxLayout()
-        self.chk_tts = QCheckBox("启用 Edge-TTS 批量配音")
-        self.chk_4grid = QCheckBox("开启四宫格分屏布局")
-        opt_layout.addWidget(self.chk_tts)
-        opt_layout.addWidget(self.chk_4grid)
-        layout.addLayout(opt_layout)
-
-        self.btn_select = QPushButton("1. 导入素材")
-        self.btn_select.clicked.connect(self.select_videos)
-        layout.addWidget(self.btn_select)
-
-        self.btn_process = QPushButton("2. 执行自动化队列")
-        self.btn_process.clicked.connect(self.start_processing)
-        self.btn_process.setEnabled(False)
-        layout.addWidget(self.btn_process)
-
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        self.log_box.setStyleSheet("background-color: #1e1e1e; color: #00ff00; font-family: Consolas;")
-        layout.addWidget(self.log_box)
-        self.setLayout(layout)
-
-    def select_videos(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "选择视频素材", "", "Video Files (*.mp4 *.mov)")
-        if files:
-            self.input_videos = files
-            self.info_label.setText(f"已加载 {len(files)} 个素材文件。")
-            self.btn_process.setEnabled(True)
-
-    def start_processing(self):
-        if not self.input_videos: return
-        self.btn_select.setEnabled(False)
-        self.btn_process.setEnabled(False)
-        self.log_box.clear()
-
-        self.worker = AutomationWorker(
-            self.input_videos, 
-            "output_dir", 
-            self.chk_tts.isChecked(), 
-            self.chk_4grid.isChecked()
-        )
-        self.worker.log_signal.connect(self.update_log)
-        self.worker.finished_signal.connect(self.processing_finished)
-        self.worker.start()
-
-    def update_log(self, text):
-        self.log_box.append(text)
-        bar = self.log_box.verticalScrollBar()
-        bar.setValue(bar.maximum())
-
-    def processing_finished(self, success):
-        self.btn_select.setEnabled(True)
-        self.btn_process.setEnabled(True)
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    ex = VideoWorkshopApp()
-    ex.show()
-    sys.exit(app.exec_())
+        startBtn.addEventListener('click', async () => {
+            startBtn.disabled = true;
+            message.innerHTML = "正在加载 WebAssembly 引擎...";
+            
+            if (!ffmpeg.isLoaded()) await ffmpeg.load();
+            
+            message.innerHTML = "正在压制中，请查看 F12 控制台获取进度...";
+            
+            // 将本地文件挂载到 WASM 内存中
+            ffmpeg.FS('writeFile', videoFile.name, await fetchFile(videoFile));
+            
+            // 执行压制参数 (例如快速预设、调整码率)
+            await ffmpeg.run('-i', videoFile.name, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', 'output.mp4');
+            
+            message.innerHTML = "自动化队列处理完成！";
+            
+            // 从内存中读取合成后的文件并渲染到播放器
+            const data = ffmpeg.FS('readFile', 'output.mp4');
+            const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+            
+            outputVideo.src = videoUrl;
+            outputVideo.style.display = 'block';
+            startBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
