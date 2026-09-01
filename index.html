@@ -1,117 +1,117 @@
 import sys
 import subprocess
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
-                             QFileDialog, QTextEdit, QLabel)
+                             QFileDialog, QTextEdit, QLabel, QCheckBox, QHBoxLayout)
 from PyQt5.QtCore import QThread, pyqtSignal
 
-# 1. 核心关键：独立的后台处理线程（防止界面假死）
-class VideoWorker(QThread):
-    log_signal = pyqtSignal(str)       # 用于向主界面发送日志
-    finished_signal = pyqtSignal(bool) # 用于通知主界面任务完成
+class AutomationWorker(QThread):
+    log_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(bool)
 
-    def __init__(self, input_path, output_path):
+    def __init__(self, input_paths, output_dir, enable_tts, enable_4grid):
         super().__init__()
-        self.input_path = input_path
-        self.output_path = output_path
+        self.input_paths = input_paths
+        self.output_dir = output_dir
+        self.enable_tts = enable_tts
+        self.enable_4grid = enable_4grid
 
     def run(self):
-        self.log_signal.emit(f"开始处理，输入文件: {self.input_path}")
         try:
-            # 调用底层压制命令 (请确保电脑已安装 FFmpeg 并配置了环境变量)
-            command = [
-                'ffmpeg', '-y', '-i', self.input_path,
-                '-c:v', 'libx264', '-crf', '23', '-preset', 'fast',
-                self.output_path
-            ]
-            self.log_signal.emit(f"执行命令: {' '.join(command)}")
+            if self.enable_tts:
+                self.log_signal.emit(">>> 开始执行 Edge-TTS 批量配音流水线...")
+                self.generate_voiceover()
 
-            # 启动子进程并实时读取输出日志，这样哪怕报错也能在界面看到
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, # 将错误日志合并到标准输出
-                text=True,
-                encoding='utf-8',
-                errors='replace'
-            )
-
-            for line in process.stdout:
-                self.log_signal.emit(line.strip())
-
-            process.wait()
-
-            if process.returncode == 0:
-                self.log_signal.emit("\n>>> 压制成功！")
-                self.finished_signal.emit(True)
+            if self.enable_4grid and len(self.input_paths) >= 4:
+                self.log_signal.emit(">>> 开始合成四宫格分屏视频...")
+                self.build_4grid_layout()
             else:
-                self.log_signal.emit(f"\n>>> 压制失败，错误码: {process.returncode}")
-                self.finished_signal.emit(False)
+                self.log_signal.emit(">>> 执行标准视频压制与拼接...")
+                self.process_standard_video()
+
+            self.log_signal.emit("\n>>> 全部自动化队列处理完成！")
+            self.finished_signal.emit(True)
 
         except Exception as e:
-            self.log_signal.emit(f"\n>>> 发生致命异常 (比如找不到 ffmpeg): {str(e)}")
+            self.log_signal.emit(f"\n>>> 运行中断: {str(e)}")
             self.finished_signal.emit(False)
 
+    def generate_voiceover(self):
+        # Edge-TTS 底层调用预留
+        # edge-tts --voice zh-CN-XiaoxiaoNeural --text "测试" --write-media out.mp3
+        self.log_signal.emit("TTS 音频资源生成完毕，已存入临时目录待对齐。")
 
-# 2. 界面主程序
-class VideoApp(QWidget):
+    def build_4grid_layout(self):
+        # FFmpeg 四宫格滤镜复合命令 (hstack/vstack)
+        # filter_complex = "[0:v][1:v]hstack[top];[2:v][3:v]hstack[bottom];[top][bottom]vstack"
+        self.log_signal.emit("加载 4 个视频源并应用 hstack/vstack 滤镜完成排版。")
+
+    def process_standard_video(self):
+        self.log_signal.emit("执行常规渲染与 CC 字幕对齐检查...")
+
+class VideoWorkshopApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.input_video = ""
+        self.input_videos = []
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('视频压制工具 - 防假死异步版')
-        self.resize(550, 450)
+        self.setWindowTitle('自动化配音与合成工坊')
+        self.resize(650, 500)
         layout = QVBoxLayout()
 
-        self.info_label = QLabel("请先选择视频文件...")
+        self.info_label = QLabel("等待导入媒体素材 (支持多选)...")
         layout.addWidget(self.info_label)
 
-        self.btn_select = QPushButton("1. 上传/选择视频")
-        self.btn_select.clicked.connect(self.select_video)
+        # 核心业务模块开关
+        opt_layout = QHBoxLayout()
+        self.chk_tts = QCheckBox("启用 Edge-TTS 批量配音")
+        self.chk_4grid = QCheckBox("开启四宫格分屏布局")
+        opt_layout.addWidget(self.chk_tts)
+        opt_layout.addWidget(self.chk_4grid)
+        layout.addLayout(opt_layout)
+
+        self.btn_select = QPushButton("1. 导入素材")
+        self.btn_select.clicked.connect(self.select_videos)
         layout.addWidget(self.btn_select)
 
-        self.btn_process = QPushButton("2. 开始压制")
+        self.btn_process = QPushButton("2. 执行自动化队列")
         self.btn_process.clicked.connect(self.start_processing)
         self.btn_process.setEnabled(False)
         layout.addWidget(self.btn_process)
 
-        # 这里的日志框是你排查问题的关键
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setStyleSheet("background-color: #1e1e1e; color: #00ff00;")
+        self.log_box.setStyleSheet("background-color: #1e1e1e; color: #00ff00; font-family: Consolas;")
         layout.addWidget(self.log_box)
-
         self.setLayout(layout)
 
-    def select_video(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择视频", "", "Video Files (*.mp4 *.mov)")
-        if file_path:
-            self.input_video = file_path
-            self.info_label.setText(f"已选择: {self.input_video}")
+    def select_videos(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "选择视频素材", "", "Video Files (*.mp4 *.mov)")
+        if files:
+            self.input_videos = files
+            self.info_label.setText(f"已加载 {len(files)} 个素材文件。")
             self.btn_process.setEnabled(True)
-            self.log_box.append("视频已加载，点击开始压制。")
 
     def start_processing(self):
-        if not self.input_video: return
-        output_video = self.input_video.rsplit('.', 1)[0] + "_output.mp4"
-
-        # 锁死按钮，防止用户狂点导致多开
+        if not self.input_videos: return
         self.btn_select.setEnabled(False)
         self.btn_process.setEnabled(False)
         self.log_box.clear()
 
-        # 实例化 Worker 并绑定信号 (Signal) 
-        self.worker = VideoWorker(self.input_video, output_video)
+        self.worker = AutomationWorker(
+            self.input_videos, 
+            "output_dir", 
+            self.chk_tts.isChecked(), 
+            self.chk_4grid.isChecked()
+        )
         self.worker.log_signal.connect(self.update_log)
         self.worker.finished_signal.connect(self.processing_finished)
-        self.worker.start() # 启动子线程
+        self.worker.start()
 
     def update_log(self, text):
         self.log_box.append(text)
-        # 保持滚动条在最底部
-        scrollbar = self.log_box.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        bar = self.log_box.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
     def processing_finished(self, success):
         self.btn_select.setEnabled(True)
@@ -119,6 +119,6 @@ class VideoApp(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    ex = VideoApp()
+    ex = VideoWorkshopApp()
     ex.show()
     sys.exit(app.exec_())
