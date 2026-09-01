@@ -3,114 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VideoKit Pro - 智能滚动字幕工厂 (不死引擎版)</title>
-    
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
-    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
-    
+    <title>VideoKit Core - Canvas GPU 渲染引擎</title>
     <style>
-        :root { --bg-color: #0b0c10; --panel-bg: #1f2833; --border-color: #45a29e; --text-main: #c5c6c7; --text-highlight: #66fcf1; --accent: #45a29e; --danger: #ff4b4b; }
+        /* 工业级暗黑 UI 设计 */
+        :root { --bg: #0b0c10; --panel: #1f2833; --accent: #66fcf1; --text: #c5c6c7; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
-        body { background: var(--bg-color); color: var(--text-main); line-height: 1.6; padding: 30px; font-size: 14px; }
+        body { background: var(--bg); color: var(--text); padding: 30px; font-size: 13px; }
         
-        .app-container { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: 350px 1fr; gap: 30px; }
-        @media (max-width: 1000px) { .app-container { grid-template-columns: 1fr; } }
+        .header { margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        .header h1 { color: var(--accent); font-size: 26px; font-weight: 300; letter-spacing: 1px; }
+        .badge { background: rgba(102, 252, 241, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 4px; font-size: 12px; border: 1px solid var(--accent); vertical-align: middle; margin-left: 10px; font-weight: bold; }
         
-        .header { grid-column: 1 / -1; margin-bottom: 20px; border-bottom: 1px solid var(--panel-bg); padding-bottom: 20px; }
-        .header h1 { color: var(--text-highlight); font-size: 28px; font-weight: 300; letter-spacing: 2px; }
-        .badge { background: rgba(255, 75, 75, 0.1); color: var(--danger); padding: 4px 10px; border-radius: 4px; font-size: 12px; border: 1px solid var(--danger); vertical-align: middle; margin-left: 10px; font-weight: bold; }
-
-        .panel { background: var(--panel-bg); border-radius: 8px; border: 1px solid #333; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; }
-        .panel-header { background: #161c23; padding: 12px 20px; font-weight: 600; color: #fff; display: flex; align-items: center; border-bottom: 1px solid #333; }
-        .panel-header::before { content: ''; display: inline-block; width: 4px; height: 14px; background: var(--text-highlight); margin-right: 10px; border-radius: 2px; }
-        .panel-body { padding: 20px; }
-
-        .form-group { margin-bottom: 18px; }
-        .form-group.row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        label { display: block; font-size: 12px; color: #999; margin-bottom: 6px; }
+        .app-container { display: flex; gap: 30px; max-width: 1400px; margin: 0 auto; align-items: flex-start; }
+        @media (max-width: 900px) { .app-container { flex-direction: column; } }
+        
+        /* 左侧控制台 */
+        .controls { flex: 1; max-width: 480px; background: var(--panel); border-radius: 8px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .form-group { margin-bottom: 15px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        label { display: block; color: #aaa; margin-bottom: 5px; font-size: 12px; }
         input[type="text"], input[type="number"], textarea { width: 100%; background: #0b0c10; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 4px; transition: 0.3s; }
-        textarea { height: 350px; resize: vertical; font-family: Consolas, monospace; line-height: 1.5; font-size: 13px; }
+        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+        textarea { height: 220px; resize: vertical; line-height: 1.5; font-family: Consolas, monospace; }
         
-        .upload-zone { border: 2px dashed #444; background: #0b0c10; padding: 30px 20px; text-align: center; border-radius: 6px; cursor: pointer; position: relative; }
-        .upload-zone input { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
-        .file-name { margin-top: 10px; color: var(--text-highlight); font-weight: bold; word-break: break-all; }
-
-        .terminal { background: #050505; border-radius: 6px; border: 1px solid #333; margin-top: 20px; overflow: hidden; }
-        .term-header { background: #111; padding: 8px 15px; font-size: 11px; color: #666; display: flex; justify-content: space-between; border-bottom: 1px solid #222; }
-        .term-body { height: 280px; overflow-y: auto; padding: 15px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6; }
-        .term-body .log-sys { color: #66fcf1; } .term-body .log-suc { color: #4ade80; } .term-body .log-err { color: #ff4b4b; } .term-body .log-warn { color: #facc15; }
+        .upload-btn { background: #111; color: #fff; padding: 15px; text-align: center; border: 1px dashed var(--accent); border-radius: 6px; cursor: pointer; position: relative; margin-bottom: 20px; transition: 0.2s; }
+        .upload-btn:hover { background: #222; }
+        .upload-btn input { position: absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer; }
         
-        .btn-run { width: 100%; background: var(--text-highlight); color: #000; font-weight: bold; font-size: 16px; border: none; padding: 16px; border-radius: 6px; cursor: pointer; transition: 0.2s; text-transform: uppercase; margin-top: 10px; }
-        .btn-run:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .btn-run { width: 100%; background: var(--accent); color: #000; font-weight: bold; font-size: 16px; padding: 15px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+        .btn-run:disabled { background: #444; color: #777; cursor: not-allowed; }
+        .btn-run:hover:not(:disabled) { box-shadow: 0 0 15px rgba(102, 252, 241, 0.4); }
 
-        .preview-wrapper { display: none; margin-top: 20px; padding: 20px; background: #111; border: 1px dashed var(--accent); border-radius: 8px; text-align: center; }
-        video { max-width: 100%; max-height: 700px; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-
-        #probe-box { position: absolute; top: -9999px; left: -9999px; visibility: hidden; font-family: Arial, sans-serif; font-weight: bold; line-height: 1.25; word-wrap: break-word; white-space: pre-wrap; }
+        /* 右侧画布预览区 */
+        .preview-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+        .canvas-wrapper { position: relative; width: 100%; max-width: 450px; background: #000; border-radius: 10px; overflow: hidden; box-shadow: 0 15px 40px rgba(0,0,0,0.8); border: 1px solid #333; }
+        /* 强制保持 9:16 物理比例视窗 */
+        .canvas-wrapper::before { content: ""; display: block; padding-top: 177.77%; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        .progress-bar { width: 100%; max-width: 450px; height: 4px; background: #222; margin-top: 15px; border-radius: 2px; overflow: hidden; }
+        #prog { height: 100%; width: 0%; background: var(--accent); }
+        
+        #final-video { width: 100%; max-width: 450px; margin-top: 20px; border-radius: 10px; border: 2px solid var(--accent); display: none; }
+        .log-box { margin-top: 15px; color: #aaa; font-family: monospace; font-size: 12px; padding: 10px; background: #000; border-radius: 4px; width: 100%; max-width: 450px; }
     </style>
 </head>
 <body>
 
 <div class="app-container">
-    <div class="header">
-        <h1>VideoKit Web Engine <span class="badge">抗压防爆不死版</span></h1>
-        <p style="color: #777; margin-top: 5px;">突破跨域 Worker 锁 / 剔除耗存混合图层 / 引入原生 ASS 视窗裁剪，速度暴增 10 倍绝不崩溃</p>
-    </div>
-
-    <!-- 左侧栏：参数设置集群 -->
-    <div class="left-sidebar">
-        <div class="panel">
-            <div class="panel-header">轨道与画布</div>
-            <div class="panel-body">
-                <div class="upload-zone">
-                    <div style="font-size: 30px; color: #666;">📥</div>
-                    <div style="margin-top: 10px;">导入 9:16 底层视频源</div>
-                    <input type="file" id="video-file" accept="video/*">
-                    <div class="file-name" id="file-name">未选择视频</div>
-                </div>
-            </div>
+    <div class="controls">
+        <div class="header">
+            <h1>VideoKit Engine <span class="badge">Canvas Native 直录版</span></h1>
+            <p>1:1 像素级复刻 reels-overlay 源码逻辑，0 内存爆炸风险</p>
         </div>
 
-        <div class="panel">
-            <div class="panel-header">排版与智能匹配</div>
-            <div class="panel-body">
-                <div class="form-group row">
-                    <div><label>正文宽度 (决定折行)</label><input type="number" id="cfg-width" value="900"></div>
-                    <div><label>正文字号 (决定高度)</label><input type="number" id="cfg-size" value="65"></div>
-                </div>
-                
-                <div class="form-group row">
-                    <div><label>底部停靠距离 (Y留白)</label><input type="number" id="cfg-bottom" value="150"></div>
-                    <div><label>提前完成 (秒)</label><input type="number" id="cfg-early" value="0.5" step="0.1"></div>
-                </div>
-            </div>
+        <div class="upload-btn">
+            <span id="file-name" style="font-weight: bold; font-size: 14px; color: var(--accent);">📥 点击加载无字幕原片</span>
+            <input type="file" id="video-file" accept="video/*">
         </div>
 
-        <div class="panel">
-            <div class="panel-header">物理视窗遮挡 (防爆内存版)</div>
-            <div class="panel-body">
-                <div class="form-group row">
-                    <div><label>顶部裁切线 (防遮挡标题)</label><input type="number" id="offset-top" value="480"></div>
-                    <div><label>底部裁切线 (距底侧)</label><input type="number" id="offset-bot" value="100"></div>
-                </div>
-                <div style="font-size: 11px; color: #777; margin-top: 10px;">* 已将极耗内存的渐变羽化替换为零损耗的底层 ASS \clip 视窗裁剪技术。文字超过上下裁切线将自动利落切断。</div>
-            </div>
+        <div class="form-group">
+            <label>📌 悬浮标题 (固定坐标，渲染独立图层)</label>
+            <input type="text" id="cfg-title" value="In September, say this prayer!">
         </div>
-    </div>
-
-    <!-- 右侧栏：剧本与执行 -->
-    <div class="right-content">
-        <div class="panel">
-            <div class="panel-header">剧本矩阵与渲染列队</div>
-            <div class="panel-body">
-                <div class="form-group">
-                    <label style="color: var(--text-highlight);">📌 悬浮标题 (固定坐标)</label>
-                    <input type="text" id="cfg-title" value="In September, say this prayer!">
-                </div>
-                
-                <div class="form-group">
-                    <label style="color: #fff;">📝 滚动主文案</label>
-                    <textarea id="cfg-body" spellcheck="false">1. God walks with me.
+        
+        <div class="form-group">
+            <label>📝 滚动主文案 (自动计算物理高度与折行)</label>
+            <textarea id="cfg-body" spellcheck="false">1. God walks with me.
 2. God guides my steps.
 3. God has a beautiful plan for me.
 4. I am protected from all evil.
@@ -120,201 +79,308 @@
 8. Today brings new opportunities.
 9. I am grateful for everything I have.
 10. The future is bright and clear.</textarea>
-                </div>
-
-                <button id="btn-start" class="btn-run">🔥 启动无损极速压制</button>
-
-                <div class="terminal">
-                    <div class="term-header">
-                        <span>>_ FFMPEG.WASM COMPILER TERMINAL</span>
-                        <span id="badge-status" style="color: var(--text-highlight);">[ IDLE ]</span>
-                    </div>
-                    <div style="width: 100%; height: 3px; background: #222;">
-                        <div id="prog-bar" style="height: 100%; width: 0%; background: var(--text-highlight); transition: 0.2s;"></div>
-                    </div>
-                    <div class="term-body" id="term-out">
-<span class="log-sys">系统核心自检完成，防 OOM 内存崩溃策略已激活。</span></div>
-                </div>
-                
-                <div class="preview-wrapper" id="out-wrap">
-                    <h2 style="color: var(--text-highlight); margin-bottom: 20px;">✅ 渲染落盘！长按或右键下方成片保存</h2>
-                    <video id="final-video" controls autoplay playsinline></video>
-                </div>
-            </div>
         </div>
+
+        <div class="form-row">
+            <div><label>正文字号 (px)</label><input type="number" id="cfg-size" value="65"></div>
+            <div><label>正文宽度 (决定折行)</label><input type="number" id="cfg-width" value="900"></div>
+        </div>
+        
+        <div class="form-row">
+            <div><label>底部留白区 (Y偏置)</label><input type="number" id="cfg-bottom" value="150"></div>
+            <div><label>提前完成 (秒)</label><input type="number" id="cfg-early" value="0.5" step="0.1"></div>
+        </div>
+
+        <div style="border-top: 1px solid #333; margin: 15px 0;"></div>
+        
+        <div class="form-row">
+            <div><label>上羽化强度</label><input type="number" id="feather-top" value="300"></div>
+            <div><label>上羽化偏移 (防遮挡标题)</label><input type="number" id="offset-top" value="480"></div>
+        </div>
+        <div class="form-row">
+            <div><label>下羽化强度</label><input type="number" id="feather-bot" value="80"></div>
+            <div><label>下羽化偏移 (距底部)</label><input type="number" id="offset-bot" value="0"></div>
+        </div>
+
+        <button id="btn-start" class="btn-run">🔥 启动实时硬件渲染</button>
+        <button id="btn-preview" class="btn-run" style="background: #333; color: #fff; margin-top: 10px;">▶️ 仅在画布预览 (不导出)</button>
+    </div>
+
+    <div class="preview-area">
+        <div class="canvas-wrapper">
+            <!-- 核心渲染画板，严格 1080x1920 物理像素 -->
+            <canvas id="render-canvas" width="1080" height="1920"></canvas>
+        </div>
+        <div class="progress-bar"><div id="prog"></div></div>
+        <div class="log-box" id="log-out">系统就绪... 等待媒体流注入。</div>
+        
+        <video id="final-video" controls autoplay playsinline></video>
     </div>
 </div>
 
-<div id="probe-box"></div>
-
 <script>
-    const { FFmpeg } = window.FFmpegWASM;
-    const { fetchFile, toBlobURL } = window.FFmpegUtil;
-    let ffmpeg = null;
+    // ==========================================
+    // 核心引擎：完美复刻 ReelsOverlay Canvas API
+    // ==========================================
 
-    const ui = {
-        btn: document.getElementById('btn-start'), file: document.getElementById('video-file'),
-        fileName: document.getElementById('file-name'), term: document.getElementById('term-out'),
-        status: document.getElementById('badge-status'), progBar: document.getElementById('prog-bar'),
-        outWrap: document.getElementById('out-wrap'), videoOut: document.getElementById('final-video')
-    };
+    const canvas = document.getElementById('render-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // 离屏画布：专门用于绘制滚动文字并应用原生羽化遮罩
+    const textCanvas = document.createElement('canvas');
+    textCanvas.width = 1080;
+    textCanvas.height = 1920;
+    const tCtx = textCanvas.getContext('2d');
 
-    ui.file.addEventListener('change', e => {
-        if(e.target.files.length) ui.fileName.innerText = `✅ 就绪: ${e.target.files[0].name}`;
-    });
+    // 隐藏的源视频播放器
+    const video = document.createElement('video');
+    video.crossOrigin = 'anonymous';
+    video.playsInline = true;
 
-    const log = (msg, type = 'sys') => {
-        const time = new Date().toLocaleTimeString('en-US', {hour12: false});
-        ui.term.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`;
-        ui.term.scrollTop = ui.term.scrollHeight;
-    };
+    // 状态管理
+    let isRendering = false;
+    let isRecording = false;
+    let animId;
+    let mediaRecorder;
+    let chunks = [];
+    let p = {}; 
+    
+    // Web Audio API 音轨路由
+    let audioCtx, sourceNode, destNode;
 
-    const probeDuration = (file) => new Promise((resolve) => {
-        const vid = document.createElement('video');
-        vid.preload = 'metadata';
-        vid.onloadedmetadata = () => { URL.revokeObjectURL(vid.src); resolve(vid.duration); };
-        vid.onerror = () => resolve(15.0); 
-        vid.src = URL.createObjectURL(file);
-    });
-
-    const probeHeight = (text, width, fSize) => {
-        const box = document.getElementById('probe-box');
-        box.style.width = `${width}px`;
-        box.style.fontSize = `${fSize}px`;
-        box.innerText = text;
-        const h = box.offsetHeight;
-        log(`📐 探针测绘反馈: 宽度 ${width}px 下，物理高度为 ${h}px`, 'sys');
-        return h;
-    };
-
-    const formatAss = (t) => t.replace(/\n/g, '\\N').replace(/\r/g, '');
-
-    ui.btn.addEventListener('click', async () => {
-        const file = ui.file.files[0];
-        if (!file) return alert("防呆拦截：请先导入视频文件。");
-
-        ui.btn.disabled = true; ui.btn.innerText = '⚙️ 安全引擎全速运转中...';
-        ui.outWrap.style.display = 'none'; ui.term.innerHTML = '';
-        ui.progBar.style.width = '0%'; ui.status.innerText = '[ PROCESSING ]';
-        
-        try {
-            log('======== 启动抗压级安全合成管线 ========', 'sys');
+    // 1. 本地媒体流挂载
+    document.getElementById('video-file').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            video.src = URL.createObjectURL(file);
+            video.load();
+            document.getElementById('file-name').innerText = `✅ 媒体已挂载: ${file.name}`;
+            log(`视频流解析成功。`);
             
-            const body = document.getElementById('cfg-body').value;
-            const title = document.getElementById('cfg-title').value;
-            const bWidth = parseInt(document.getElementById('cfg-width').value);
-            const bSize = parseInt(document.getElementById('cfg-size').value);
-            const bMargin = parseInt(document.getElementById('cfg-bottom').value);
-            const earlyFinish = parseFloat(document.getElementById('cfg-early').value);
-            
-            const duration = await probeDuration(file);
-            log(`⏱️ 精准嗅探视频总时长: ${duration.toFixed(2)} 秒`, 'suc');
-            
-            const tHeight = probeHeight(body, bWidth, bSize);
-            const startY = 1920 + bSize; 
-            const endY = 1920 - bMargin - tHeight; 
-            const moveTime = Math.floor(Math.max(1, duration - earlyFinish) * 1000);
-            log(`🧮 坐标轨迹解算完毕: Y轴 [${startY} ➔ ${endY}]，动画耗时 ${moveTime}ms`, 'suc');
-
-            const sideMargin = Math.floor((1080 - bWidth) / 2);
-            
-            // 视窗裁切运算
-            const clipT = parseInt(document.getElementById('offset-top').value) || 0;
-            const clipB = 1920 - (parseInt(document.getElementById('offset-bot').value) || 0);
-
-            // 核心修改：利用 ASS 原生 \clip 标签包裹文本，实现性能 0 损耗的视窗截断
-            const assData = `[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
-Style: STitle,CustomFont,75,&H00FFFFFF,&H00000000,&H90000000,-1,1,6,8,8,0,0,0
-Style: SBody,CustomFont,${bSize},&H00FFFFFF,&H00000000,&H90000000,-1,1,4,6,8,${sideMargin},${sideMargin},0
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-${title ? `Dialogue: 1,0:00:00.00,0:59:59.00,STitle,,0,0,0,,{\\pos(540,400)}${formatAss(title)}` : ''}
-Dialogue: 0,0:00:00.00,0:59:59.00,SBody,,0,0,0,,{\\clip(0,${clipT},1080,${clipB})}{\\move(540,${startY},540,${endY},0,${moveTime})}${formatAss(body)}
-`;
-
-            if (!ffmpeg) {
-                log('⬇️ 正在注入 Blob Worker 跨域伪装沙盒...', 'warn');
-                ffmpeg = new FFmpeg();
-                
-                ffmpeg.on('progress', ({ progress }) => {
-                    const pct = Math.max(0, Math.min(100, Math.round(progress * 100)));
-                    ui.progBar.style.width = `${pct}%`;
-                    if (pct % 20 === 0 && pct > 0) log(`🔥 底层极速渲染硬压中: ${pct}%`, 'sys');
-                });
-
-                ffmpeg.on('log', ({ message }) => {
-                    if (message.includes('Error') || message.includes('failed')) log(message, 'err');
-                });
-
-                const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-                const ffmpegBase = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
-                
-                await ffmpeg.load({
-                    coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm'),
-                    classWorkerURL: await toBlobURL(`${ffmpegBase}/814.ffmpeg.js`, 'text/javascript')
-                });
-                log('✅ 安全沙盒 Worker 注入成功。', 'suc');
-            }
-
-            log('💾 正在往内存虚拟系统烧录素材...', 'sys');
-            await ffmpeg.writeFile('in.mp4', await fetchFile(file));
-            await ffmpeg.writeFile('sub.ass', new TextEncoder().encode(assData));
-            
-            try {
-                const fontUrl = "https://cdn.jsdelivr.net/gh/googlefonts/roboto@main/src/hinted/Roboto-Bold.ttf";
-                await ffmpeg.writeFile('CustomFont.ttf', await fetchFile(fontUrl));
-            } catch (e) {
-                log('⚠️ CDN字体抓取超时，引擎将自动降级使用内置后备字库。', 'warn');
-            }
-
-            log('🚀 已彻底抛弃高耗存图层滤镜，开始执行极速渲染...', 'warn');
-            
-            // 极速抗压模式指令：去除所有 filter_complex 混合，直接单通道挂载 ASS
-            await ffmpeg.exec([
-                '-i', 'in.mp4',
-                '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,ass=sub.ass:fontsdir=/',
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast', 
-                '-crf', '28', 
-                '-c:a', 'copy', 
-                '-shortest',
-                'out.mp4'
-            ]);
-
-            log('📦 H.264 视频流封装完成！', 'suc');
-            const fileData = await ffmpeg.readFile('out.mp4');
-            const vUrl = URL.createObjectURL(new Blob([new Uint8Array(fileData).buffer], { type: 'video/mp4' }));
-            
-            ui.videoOut.src = vUrl;
-            ui.outWrap.style.display = 'block';
-            ui.status.innerText = '[ COMPLETED ]';
-            ui.progBar.style.width = '100%';
-            log('🎉 压制圆满落幕，大作已落盘！', 'suc');
-
-            await ffmpeg.deleteFile('in.mp4');
-            await ffmpeg.deleteFile('sub.ass');
-            await ffmpeg.deleteFile('out.mp4');
-
-        } catch (error) {
-            // 解析真实的报错对象，就算 undefined 也会有个明确的兜底
-            const errMsg = error?.message || (typeof error === 'string' ? error : '浏览器运行内存耗尽，Wasm 引擎 OOM 崩溃');
-            log(`💥 系统阻断异常: ${errMsg}`, 'err');
-            ui.status.innerText = '[ FAILED ]';
-            ui.status.style.color = 'var(--danger)';
-            console.error(error);
-        } finally {
-            ui.btn.disabled = false;
-            ui.btn.innerText = '🚀 再次执行渲染管线';
+            // 初始化第一帧
+            video.onloadeddata = () => {
+                video.currentTime = 0.1; 
+                setTimeout(drawFrame, 100); 
+            };
         }
     });
+
+    const log = (msg) => document.getElementById('log-out').innerHTML = `> ${msg}`;
+
+    // 2. 文本自动折行探针 (_drawScrollTextBlock 核心逻辑)
+    function wrapText(context, text, maxWidth) {
+        const words = text.replace(/\n/g, ' \n ').split(' ');
+        let lines = [];
+        let currentLine = '';
+        for (let i = 0; i < words.length; i++) {
+            if (words[i] === '\n') {
+                lines.push(currentLine); currentLine = ''; continue;
+            }
+            let testLine = currentLine + words[i] + ' ';
+            let metrics = context.measureText(testLine);
+            if (metrics.width > maxWidth && currentLine !== '') {
+                lines.push(currentLine); currentLine = words[i] + ' ';
+            } else {
+                currentLine = testLine;
+            }
+        }
+        lines.push(currentLine);
+        return lines;
+    }
+
+    // 3. 启动引擎 (包含录制)
+    document.getElementById('btn-start').addEventListener('click', () => startEngine(true));
+    document.getElementById('btn-preview').addEventListener('click', () => startEngine(false));
+
+    function startEngine(record) {
+        if (!video.src) return alert("防呆拦截：请先在左侧上传原视频文件。");
+        
+        isRecording = record;
+        document.getElementById('final-video').style.display = 'none';
+
+        // 捕获 UI 参数
+        p = {
+            title: document.getElementById('cfg-title').value,
+            bodyText: document.getElementById('cfg-body').value,
+            fSize: parseInt(document.getElementById('cfg-size').value),
+            tWidth: parseInt(document.getElementById('cfg-width').value),
+            bMargin: parseInt(document.getElementById('cfg-bottom').value),
+            earlyFin: parseFloat(document.getElementById('cfg-early').value),
+            fTop: parseInt(document.getElementById('feather-top').value),
+            oTop: parseInt(document.getElementById('offset-top').value),
+            fBot: parseInt(document.getElementById('feather-bot').value),
+            oBot: parseInt(document.getElementById('offset-bot').value),
+            totalDuration: video.duration
+        };
+        p.lHeight = p.fSize * 1.4; // 动态行高
+
+        // === 音频路由黑科技：捕获视频源声并混入录制流 ===
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            sourceNode = audioCtx.createMediaElementSource(video);
+            destNode = audioCtx.createMediaStreamDestination();
+            sourceNode.connect(destNode); // 路由给录制器
+            sourceNode.connect(audioCtx.destination); // 路由给扬声器(预览发声)
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        if (isRecording) {
+            const stream = canvas.captureStream(30); // 30帧视频流
+            const audioTracks = destNode.stream.getAudioTracks();
+            if (audioTracks.length > 0) stream.addTrack(audioTracks[0]); // 注入音轨
+
+            // 探针：寻找当前浏览器支持的最佳编码器 (首选 MP4，兜底 WebM)
+            let mimeType = 'video/webm'; 
+            if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
+            else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
+
+            chunks = [];
+            mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8000000 });
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(chunks, { type: mimeType });
+                const finalVid = document.getElementById('final-video');
+                finalVid.src = URL.createObjectURL(blob);
+                finalVid.style.display = 'block';
+                log('🎉 压制圆满落幕！已在下方生成高清成品，右键或长按视频即可保存。');
+                toggleButtons(false);
+            };
+            mediaRecorder.start();
+        }
+
+        toggleButtons(true);
+        log(isRecording ? '🚀 录制管线已启动，请耐心观看一遍视频，结束后自动出片...' : '▶️ 实时预览渲染中...');
+        
+        video.currentTime = 0;
+        video.play();
+        isRendering = true;
+        renderLoop();
+    }
+
+    function toggleButtons(disabled) {
+        document.getElementById('btn-start').disabled = disabled;
+        document.getElementById('btn-preview').disabled = disabled;
+    }
+
+    // 引擎停止挂钩
+    video.addEventListener('ended', () => {
+        isRendering = false;
+        cancelAnimationFrame(animId);
+        if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        } else if (!isRecording) {
+            toggleButtons(false);
+            log('预览结束。');
+        }
+    });
+
+    // ==========================================
+    // 4. 核心渲染图层矩阵 (_drawScrollOverlay)
+    // ==========================================
+    function renderLoop() {
+        if (!isRendering) return;
+        drawFrame();
+        animId = requestAnimationFrame(renderLoop);
+    }
+
+    function drawFrame() {
+        // [底层] 绘制原始视频源 (自适应裁切居中)
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, 1080, 1920);
+        if (video.videoWidth) {
+            const scale = Math.max(1080 / video.videoWidth, 1920 / video.videoHeight);
+            const w = video.videoWidth * scale;
+            const h = video.videoHeight * scale;
+            ctx.drawImage(video, (1080 - w) / 2, (1920 - h) / 2, w, h);
+        }
+        
+        tCtx.clearRect(0, 0, 1080, 1920);
+
+        // [数学核心] 动态计算排版与滚动坐标
+        tCtx.font = `bold ${p.fSize}px Arial, sans-serif`;
+        const lines = wrapText(tCtx, p.bodyText, p.tWidth);
+        const textH = lines.length * p.lHeight;
+        
+        const startY = 1920 + p.fSize; 
+        const endY = 1920 - p.bMargin - textH; 
+        
+        const moveD = Math.max(1, p.totalDuration - p.earlyFin);
+        const progress = Math.min(1, video.currentTime / moveD); 
+        const currentY = startY - (startY - endY) * progress;
+
+        // [排版] 在离屏画板绘制滚动文本 (复刻 _drawScrollTextBlock)
+        tCtx.textAlign = 'center';
+        tCtx.textBaseline = 'top';
+        
+        // 极品硬件级发光阴影与描边
+        tCtx.shadowColor = 'rgba(0,0,0,0.85)';
+        tCtx.shadowBlur = 12;
+        tCtx.shadowOffsetX = 3;
+        tCtx.shadowOffsetY = 4;
+        
+        let lineY = currentY;
+        for (let line of lines) {
+            if (line.trim() !== '') {
+                tCtx.lineWidth = Math.max(4, p.fSize * 0.1); // 自适应描边粗细
+                tCtx.strokeStyle = 'black';
+                tCtx.strokeText(line, 540, lineY);
+                tCtx.fillStyle = 'white';
+                tCtx.fillText(line, 540, lineY);
+            }
+            lineY += p.lHeight;
+        }
+
+        // [最强黑科技] 应用 Canvas Alpha 原生渐变羽化遮罩 (性能零损耗)
+        applyFeatherMask(tCtx, p.fTop, p.oTop, p.fBot, p.oBot);
+
+        // [合成] 将羽化处理后的纯文字层，完美盖在视频上
+        ctx.drawImage(textCanvas, 0, 0);
+
+        // [顶层] 独立绘制绝对固定的标题 (不受羽化和裁切影响)
+        if (p.title) {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.font = `bold 72px Arial, sans-serif`;
+            ctx.shadowColor = 'rgba(0,0,0,0.9)';
+            ctx.shadowBlur = 15;
+            ctx.shadowOffsetX = 4;
+            ctx.shadowOffsetY = 5;
+            ctx.lineWidth = 7;
+            ctx.strokeStyle = 'black';
+            ctx.strokeText(p.title, 540, p.oTop - 90); // 浮在顶部羽化线之上
+            ctx.fillStyle = '#FFFFFF'; 
+            ctx.fillText(p.title, 540, p.oTop - 90);
+        }
+
+        // 更新底部的进度条
+        document.getElementById('prog').style.width = `${(video.currentTime / p.totalDuration) * 100}%`;
+    }
+
+    // 真正的无损透明度擦除算法 (Feathering)
+    function applyFeatherMask(ctxLayer, tF, tO, bF, bO) {
+        // destination-in: 只保留与新图形重叠的部分，并且继承新图形的透明度 (Alpha)
+        ctxLayer.globalCompositeOperation = 'destination-in'; 
+        const grad = ctxLayer.createLinearGradient(0, 0, 0, 1920);
+        
+        // 顶部透明渐变
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        if (tO > 0) grad.addColorStop(tO / 1920, 'rgba(0,0,0,0)');
+        if (tO + tF > 0) grad.addColorStop((tO + tF) / 1920, 'rgba(0,0,0,1)');
+        
+        // 底部透明渐变
+        const bStart = 1920 - bO - bF;
+        const bEnd = 1920 - bO;
+        grad.addColorStop(bStart / 1920, 'rgba(0,0,0,1)');
+        grad.addColorStop(bEnd / 1920, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        
+        ctxLayer.fillStyle = grad;
+        ctxLayer.fillRect(0, 0, 1080, 1920);
+        
+        // 恢复正常画笔模式，以防影响下一帧
+        ctxLayer.globalCompositeOperation = 'source-over'; 
+    }
 </script>
 </body>
 </html>
