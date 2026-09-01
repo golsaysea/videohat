@@ -3,159 +3,248 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>滚动堆叠字幕生成器</title>
+    <title>动态滚动字幕工坊 - 智能匹配版</title>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #fff; padding: 20px; max-width: 600px; margin: 0 auto; }
-        .box { background: #222; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        textarea { width: 100%; height: 150px; background: #333; color: #fff; border: 1px solid #555; padding: 10px; margin-top: 10px; font-family: monospace; }
-        button { background: #ff4500; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        #log { font-size: 12px; color: #0f0; margin-top: 10px; height: 100px; overflow-y: auto; background: #000; padding: 10px; }
-        video { width: 100%; margin-top: 10px; border-radius: 5px; display: none; }
+        :root { --bg: #121212; --panel: #1e1e1e; --text: #e0e0e0; --accent: #007acc; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 30px; max-width: 900px; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .panel { background: var(--panel); padding: 25px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        h2, h3 { margin-top: 0; color: #fff; font-weight: 500; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        label { display: block; margin: 15px 0 5px; font-size: 13px; color: #aaa; }
+        input[type="text"], input[type="number"], textarea { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 5px; box-sizing: border-box; }
+        textarea { height: 180px; resize: vertical; line-height: 1.5; font-size: 15px; }
+        input[type="file"] { margin-bottom: 15px; }
+        .checkbox-group { display: flex; align-items: center; margin-top: 15px; font-size: 14px; }
+        .checkbox-group input { margin-right: 8px; width: 18px; height: 18px; }
+        button { background: var(--accent); color: white; border: none; padding: 15px; font-size: 16px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 20px; transition: 0.2s; }
+        button:hover { background: #005f9e; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        #log-console { background: #000; color: #0f0; padding: 15px; font-family: 'Consolas', monospace; height: 160px; overflow-y: auto; border-radius: 5px; font-size: 12px; margin-top: 20px; white-space: pre-wrap; }
+        #preview-video { width: 100%; margin-top: 20px; border-radius: 8px; border: 2px solid #333; display: none; }
+        
+        /* 隐形测绘容器：用于极其精准地计算文本高度 */
+        #text-measure-box { position: absolute; top: -9999px; left: -9999px; visibility: hidden; word-wrap: break-word; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
-    <h2 style="text-align: center;">🙏 祷告文滚动字幕生成器</h2>
+    <h2>🎥 智能适配滚动字幕引擎</h2>
 
-    <div class="box">
-        <label>1. 上传无字幕的原视频 (竖屏):</label><br><br>
-        <input type="file" id="video-upload" accept="video/mp4,video/mov">
+    <div class="grid">
+        <div class="panel">
+            <h3>📌 元素配置</h3>
+            <input type="file" id="video-upload" accept="video/mp4,video/mov">
+            
+            <label>固定标题 (不参与滚动)</label>
+            <input type="text" id="title-input" value="In September, say this prayer!">
+            
+            <label>正文宽度 (决定换行时机)</label>
+            <input type="number" id="text-width" value="900">
+
+            <label>正文字号</label>
+            <input type="number" id="font-size" value="65">
+
+            <label>下羽化预留区 (底部间距)</label>
+            <input type="number" id="bottom-margin" value="150" title="决定字幕停在哪里">
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="smart-match" checked>
+                <label for="smart-match">智能适配: 文字全显示后停止滚动 (根据视频总时长自动计算速度)</label>
+            </div>
+            
+            <div class="checkbox-group">
+                <input type="checkbox" id="early-finish">
+                <label for="early-finish">提前完成: 在视频结束前 2 秒停稳</label>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3>📝 滚动正文输入区</h3>
+            <textarea id="body-input">1. God walks with me.
+2. God guides my steps.
+3. God has a beautiful plan for me.
+4. I am protected from all evil.
+5. Every challenge is a stepping stone.
+6. My heart is full of peace.
+7. I attract positive energy.
+8. Today brings new opportunities.
+9. I am grateful for everything I have.
+10. The future is bright and clear.</textarea>
+            
+            <button id="generate-btn">开始渲染大作</button>
+        </div>
     </div>
 
-    <div class="box">
-        <label>2. 填入字幕时间轴 (格式: 开始秒数,结束秒数 | 文字):</label>
-        <textarea id="sub-input">
-0,2 | In September, say this prayer!
-2,4 | 1. God walks with me.
-4,6 | 2. God guides my steps.
-6,10 | 3. God has a beautiful plan for me.</textarea>
-        <p style="font-size: 12px; color: #aaa;">* 每一行会自动把上一行往上顶，就像你的参考视频一样。</p>
-    </div>
-
-    <button id="generate-btn">开始合成视频</button>
-    <div id="log">等待操作...</div>
+    <div id="log-console">等待上传文件与指令...
+* 请确保将 font.ttf 放入网站根目录，用于文本渲染 *</div>
     
-    <div class="box" id="output-box" style="display: none;">
-        <label>3. 你的视频做好了 (长按或右键保存):</label>
-        <video id="output-video" controls></video>
-    </div>
+    <video id="preview-video" controls></video>
+
+    <div id="text-measure-box"></div>
 
     <script>
         const { createFFmpeg, fetchFile } = FFmpeg;
+        // 关闭默认日志，我们自己接管输出
         const ffmpeg = createFFmpeg({ log: false });
-        const logEl = document.getElementById('log');
+        const logEl = document.getElementById('log-console');
+        const generateBtn = document.getElementById('generate-btn');
 
-        function printLog(text) {
-            logEl.innerHTML += `<div>> ${text}</div>`;
+        function printLog(msg) {
+            logEl.textContent += `\n[System] ${msg}`;
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // 核心算法：把你输入的文字，转换成带有“向上堆叠”动画位置的 ASS 字幕格式
-        function createAssSubtitle(textInput) {
-            const lines = textInput.split('\n').filter(l => l.trim() !== '');
-            const subs = lines.map(line => {
-                const parts = line.split('|');
-                const times = parts[0].split(',');
-                return { 
-                    start: parseFloat(times[0]), 
-                    end: parseFloat(times[1]), 
-                    text: parts[1].trim() 
-                };
+        // 核心技术 1：瞬间嗅探视频物理时长
+        function getVideoDuration(file) {
+            return new Promise((resolve) => {
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                video.onloadedmetadata = function() {
+                    URL.revokeObjectURL(video.src);
+                    resolve(video.duration);
+                }
+                video.src = URL.createObjectURL(file);
             });
+        }
 
-            // ASS 字幕头部：定义了粗体、白字、黑边、黑阴影（完全模仿你的参考视频）
-            let ass = `[Script Info]
+        // 核心技术 2：虚拟 DOM 高度测绘
+        // 为了算出字到底什么时候滚完，必须提前知道这段字排版后到底有多高
+        function measureTextHeight(text, width, fontSize) {
+            const measureBox = document.getElementById('text-measure-box');
+            // 严格模仿 ASS 渲染引擎的排版属性
+            measureBox.style.width = width + 'px';
+            measureBox.style.fontSize = fontSize + 'px';
+            measureBox.style.lineHeight = '1.2'; // 对应 ASS 行距
+            measureBox.style.fontFamily = 'Arial, sans-serif'; 
+            measureBox.textContent = text;
+            
+            const height = measureBox.offsetHeight;
+            printLog(`虚拟DOM探针报告：文本块总宽度 ${width}px，实际物理高度为 ${height}px`);
+            return height;
+        }
+
+        generateBtn.addEventListener('click', async () => {
+            const videoFile = document.getElementById('video-upload').files[0];
+            if (!videoFile) return alert("老铁，还没上传视频文件呢！");
+
+            generateBtn.disabled = true;
+            document.getElementById('preview-video').style.display = 'none';
+            logEl.textContent = '初始化处理队列...';
+
+            try {
+                // 1. 读取所有 UI 参数
+                const titleText = document.getElementById('title-input').value;
+                const bodyText = document.getElementById('body-input').value;
+                const textWidth = parseInt(document.getElementById('text-width').value);
+                const fontSize = parseInt(document.getElementById('font-size').value);
+                const bottomMargin = parseInt(document.getElementById('bottom-margin').value);
+                const smartMatch = document.getElementById('smart-match').checked;
+                const earlyFinish = document.getElementById('early-finish').checked;
+
+                // 2. 探针：获取视频时长
+                printLog("正在嗅探视频元数据...");
+                const videoDuration = await getVideoDuration(videoFile);
+                printLog(`精准锁定视频总时长: ${videoDuration.toFixed(2)} 秒`);
+
+                // 3. 探针：获取文本高度
+                const textHeight = measureTextHeight(bodyText, textWidth, fontSize);
+
+                // 4. 核心数学推导：计算滚动的终点坐标
+                // 画面分辨率假定为 1080x1920
+                const SCREEN_HEIGHT = 1920;
+                
+                // 起点：文本顶部刚碰到画面最底部，所以 Y坐标 = 1920
+                const startY = SCREEN_HEIGHT; 
+                
+                // 终点：要让文本完全显示，文本的底部必须高于画面底部(留出 bottomMargin 也就是羽化区)
+                // 也就是 Y坐标 + 文本总高度 = 1920 - 底部留白
+                let endY = SCREEN_HEIGHT - bottomMargin - textHeight;
+
+                // 动画时长逻辑
+                // 如果开启提前2秒完成，动画持续时间 = 总时长 - 2
+                const animDuration = earlyFinish ? Math.max(1, videoDuration - 2) : videoDuration;
+                // 转换为毫秒给 ASS 使用
+                const moveTimeMs = Math.floor(animDuration * 1000);
+
+                printLog(`轨迹方程已生成：起始坐标 Y=${startY} -> 终点坐标 Y=${endY}，运动耗时 ${moveTimeMs}ms`);
+
+                // 5. 组装终极 ASS 字幕文件
+                // 使用 \pos 定位静态标题，使用 \move 处理智能动画
+                const formatAssText = (txt) => txt.replace(/\n/g, '\\N');
+
+                const assContent = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginV
-Style: Default,Arial,85,&H00FFFFFF,&H00000000,&H80000000,-1,1,10,6,2,20
+Style: TitleStyle,CustomFont,85,&H00FFFFFF,&H00000000,&H80000000,-1,1,10,6,8,50
+Style: BodyStyle,CustomFont,${fontSize},&H00FFFFFF,&H00000000,&H80000000,-1,1,6,4,8,0
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 1,0:00:00.00,0:10:00.00,TitleStyle,,0,0,0,,{\\pos(540,400)}${formatAssText(titleText)}
+Dialogue: 0,0:00:00.00,0:10:00.00,BodyStyle,,0,0,0,,{\\move(540,${startY},540,${endY},0,${moveTimeMs})}${formatAssText(bodyText)}
 `;
-            // 时间格式化辅助函数
-            const formatTime = (seconds) => {
-                const h = Math.floor(seconds / 3600);
-                const m = Math.floor((seconds % 3600) / 60);
-                const s = (seconds % 60).toFixed(2);
-                return `${h}:${m.toString().padStart(2, '0')}:${s.padStart(5, '0')}`;
-            };
 
-            // 堆叠逻辑：遍历每一行字幕，并且把以前出现过的字幕也渲染出来，位置不断往上抬
-            for (let i = 0; i < subs.length; i++) {
-                const current = subs[i];
-                const startTime = formatTime(current.start);
-                const endTime = formatTime(current.end);
-                
-                for (let j = 0; j <= i; j++) {
-                    const renderText = subs[j].text;
-                    // 位置计算：最新的在最下面(Y: 1300)，之前的每次往上顶 130 像素
-                    const yPos = 1300 - ((i - j) * 130);
-                    // 使用 ASS 的 \pos 标签强制绝对定位
-                    ass += `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,{\\pos(540,${yPos})}${renderText}\n`;
+                // 6. 唤醒 WebAssembly 并挂载文件
+                if (!ffmpeg.isLoaded()) {
+                    printLog("首次启动：从云端加载 FFmpeg Wasm 引擎 (约20MB)...");
+                    await ffmpeg.load();
                 }
-            }
-            return ass;
-        }
 
-        document.getElementById('generate-btn').addEventListener('click', async () => {
-            const videoFile = document.getElementById('video-upload').files[0];
-            const textInput = document.getElementById('sub-input').value;
-
-            if (!videoFile) {
-                alert('请先上传原视频！');
-                return;
-            }
-
-            document.getElementById('generate-btn').disabled = true;
-            document.getElementById('output-box').style.display = 'none';
-            logEl.innerHTML = '';
-
-            try {
-                printLog("正在加载浏览器压制引擎...");
-                if (!ffmpeg.isLoaded()) await ffmpeg.load();
-
-                printLog("生成字幕排版文件...");
-                const assData = createAssSubtitle(textInput);
-                
-                // 为了让浏览器里的 ffmpeg 能正常渲染字体，需要挂载一个默认英文字体
-                // 这里我们随便写一个让 libass 不报错的空字体引用逻辑
-                ffmpeg.FS('writeFile', 'subs.ass', new TextEncoder().encode(assData));
+                printLog("挂载虚拟文件系统...");
                 ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
-
-                printLog("开始将字幕硬压入视频 (可能需要几分钟，请勿关闭网页)...");
+                ffmpeg.FS('writeFile', 'subs.ass', new TextEncoder().encode(assContent));
                 
+                // 挂载字体文件 (极其关键，否则浏览器里渲染不出字)
+                try {
+                    ffmpeg.FS('writeFile', 'CustomFont.ttf', await fetchFile('font.ttf'));
+                    printLog("字体文件挂载成功。");
+                } catch (e) {
+                    printLog("⚠️ 警告：未在同目录找到 font.ttf，字幕可能会出现乱码或渲染失败！请确保上传了字体文件。");
+                }
+
+                // 7. 执行工业级压制
+                printLog("开始硬解压制，请勿关闭页面。全程监控进度中...");
                 ffmpeg.setProgress(({ ratio }) => {
-                    printLog(`压制进度: ${(ratio * 100).toFixed(1)}%`);
+                    const pct = (ratio * 100).toFixed(1);
+                    if (pct > 0 && pct < 100) printLog(`底层渲染进度: ${pct}%`);
                 });
 
-                // 核心压制命令，使用 ultrafast 保证网页端不崩溃
-                await ffmpeg.run('-i', 'input.mp4', '-vf', 'ass=subs.ass', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'copy', 'output.mp4');
+                // 执行命令：这里的 -preset ultrafast 是专门为了网页端设计的防止内存溢出的参数
+                await ffmpeg.run(
+                    '-i', 'input.mp4',
+                    '-vf', "ass=subs.ass:fontsdir=/", 
+                    '-c:v', 'libx264', 
+                    '-preset', 'ultrafast', 
+                    '-c:a', 'copy', 
+                    'output.mp4'
+                );
 
-                printLog("处理完成！正在生成预览...");
-                
+                // 8. 内存清理与画面输出
+                printLog("渲染完毕，封装视频流...");
                 const data = ffmpeg.FS('readFile', 'output.mp4');
                 const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
                 
-                const outputVideo = document.getElementById('output-video');
-                outputVideo.src = videoUrl;
-                document.getElementById('output-box').style.display = 'block';
+                const previewVideo = document.getElementById('preview-video');
+                previewVideo.src = videoUrl;
+                previewVideo.style.display = 'block';
 
-                // 清理内存
+                printLog("🎉 全自动化流水线执行完毕！长按下方视频即可保存。");
+
+                // 防 OOM (内存溢出) 机制
                 ffmpeg.FS('unlink', 'input.mp4');
                 ffmpeg.FS('unlink', 'subs.ass');
                 ffmpeg.FS('unlink', 'output.mp4');
 
-            } catch (err) {
-                printLog(`发生错误: ${err.message}`);
-                console.error(err);
+            } catch (error) {
+                printLog(`💥 发生致命错误: ${error.message}`);
+                console.error(error);
             } finally {
-                document.getElementById('generate-btn').disabled = false;
+                generateBtn.disabled = false;
             }
         });
     </script>
