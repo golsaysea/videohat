@@ -6,10 +6,19 @@
         <h1 class="m-0 text-lg font-bold tracking-wide text-white">VideoKit Reels Web</h1>
       </div>
       <div class="flex items-center gap-3">
+        <div v-if="isExporting" class="w-48 rounded border border-[#2f374c] bg-black/30 px-3 py-1.5">
+          <div class="mb-1 flex items-center justify-between text-[11px] text-gray-400">
+            <span>{{ exportStatus }}</span>
+            <span>{{ Math.round(exportProgress * 100) }}%</span>
+          </div>
+          <div class="h-1.5 overflow-hidden rounded-full bg-[#30384d]">
+            <div class="h-full rounded-full bg-blue-500 transition-all" :style="{ width: `${Math.round(exportProgress * 100)}%` }"></div>
+          </div>
+        </div>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showBulkModal = true">批量表格</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="downloadProject">保存工程 JSON</button>
         <button class="rounded bg-blue-600 px-5 py-1.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500" :disabled="isExporting" @click="exportCurrentTask">
-          {{ isExporting ? '导出中...' : '导出当前 MP4' }}
+          {{ isExporting ? '导出中...' : '导出当前视频' }}
         </button>
       </div>
     </header>
@@ -35,6 +44,7 @@
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">视频：{{ formatDuration(media.videoDuration) }}</div>
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">音频：{{ formatDuration(media.audioDuration) }}</div>
           </div>
+          <p v-if="mediaError" class="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs leading-relaxed text-red-200">{{ mediaError }}</p>
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
@@ -314,6 +324,9 @@ const isPlaying = ref(false);
 const isExporting = ref(false);
 const previewTime = ref(0);
 const exportedUrl = ref('');
+const exportProgress = ref(0);
+const exportStatus = ref('准备导出');
+const mediaError = ref('');
 const selectedTaskIndex = ref(0);
 const overlayState = reactive(createScrollOverlay({
   scroll_title: 'IN SEPTEMBER, SAY THIS PRAYER!',
@@ -546,6 +559,7 @@ const loadMedia = async (event, kind) => {
   const file = event.target.files?.[0];
   event.target.value = '';
   if (!file) return;
+  mediaError.value = '';
   const [path] = WebAssetPool.registerFiles([file]);
   const url = WebAssetPool.getUrl(path);
 
@@ -553,18 +567,38 @@ const loadMedia = async (event, kind) => {
     media.videoFile = file;
     media.videoUrl = url;
     media.videoName = file.name;
+    videoEl.value.preload = 'metadata';
     videoEl.value.src = url;
     videoEl.value.loop = true;
     videoEl.value.muted = true;
-    await waitForMetadata(videoEl.value);
-    media.videoDuration = videoEl.value.duration || 0;
+    videoEl.value.load();
+    const result = await waitForMetadata(videoEl.value);
+    media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : 0;
+    if (!result.ok || !media.videoDuration || !videoEl.value.videoWidth) {
+      mediaError.value = `浏览器无法解码这个视频：${file.name}。大多数是 HEVC/H.265、10-bit HDR、ProRes 或相机 MOV；请先转成 H.264 + AAC 的 MP4 后再导入。`;
+      media.videoUrl = '';
+      media.videoName = '';
+      media.videoDuration = 0;
+      videoEl.value.removeAttribute('src');
+      videoEl.value.load();
+    }
   } else {
     media.audioFile = file;
     media.audioUrl = url;
     media.audioName = file.name;
+    audioEl.value.preload = 'metadata';
     audioEl.value.src = url;
-    await waitForMetadata(audioEl.value);
-    media.audioDuration = audioEl.value.duration || 0;
+    audioEl.value.load();
+    const result = await waitForMetadata(audioEl.value);
+    media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0;
+    if (!result.ok || !media.audioDuration) {
+      mediaError.value = `浏览器无法读取这个音频：${file.name}。请换成 MP3、M4A 或 WAV。`;
+      media.audioUrl = '';
+      media.audioName = '';
+      media.audioDuration = 0;
+      audioEl.value.removeAttribute('src');
+      audioEl.value.load();
+    }
   }
 
   previewTime.value = 0;
@@ -572,13 +606,26 @@ const loadMedia = async (event, kind) => {
   drawPreview();
 };
 
-const waitForMetadata = (element) => new Promise((resolve) => {
+const waitForMetadata = (element, timeoutMs = 30000) => new Promise((resolve) => {
   if (element.readyState >= 1 && Number.isFinite(element.duration)) {
-    resolve();
+    resolve({ ok: true });
     return;
   }
-  element.onloadedmetadata = () => resolve();
-  element.onerror = () => resolve();
+
+  let settled = false;
+  let timer = 0;
+  const finish = (result) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    element.onloadedmetadata = null;
+    element.onerror = null;
+    resolve(result);
+  };
+
+  timer = window.setTimeout(() => finish({ ok: false, reason: 'timeout' }), timeoutMs);
+  element.onloadedmetadata = () => finish({ ok: true });
+  element.onerror = () => finish({ ok: false, reason: 'decode' });
 });
 
 const drawVideoBackground = (ctx, canvas, video) => {
@@ -616,6 +663,11 @@ const normalizeOverlayForNative = () => {
     scroll_uppercase: false,
     scroll_title_uppercase: false,
     scroll_x_anchor: overlayState.scroll_x_anchor || 'center',
+    _exporting: wasExporting,
+    debug_layout: false,
+    debug_body: false,
+    debug_title: false,
+    debug_footer: false,
     bg_opacity: overlayState.bg_opacity <= 1 ? Math.round(overlayState.bg_opacity * 255) : overlayState.bg_opacity,
     bg_padding_top: overlayState.bg_padding_top ?? overlayState.bg_pt ?? 46,
     bg_padding_bottom: overlayState.bg_padding_bottom ?? overlayState.bg_pb ?? 46,
@@ -710,7 +762,7 @@ const ensureAudioGraph = async (useSeparateAudio) => {
 };
 
 const supportedMime = () => {
-  const candidates = ['video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || '';
 };
 
@@ -728,6 +780,8 @@ const exportCurrentTask = async () => {
   syncSelectedTask();
   stopPlayback();
   exportedUrl.value = '';
+  exportProgress.value = 0;
+  exportStatus.value = '准备素材';
   isExporting.value = true;
   wasExporting = true;
 
@@ -753,6 +807,13 @@ const exportCurrentTask = async () => {
     stream.addTrack(mediaDestination.stream.getAudioTracks()[0]);
   }
   const mimeType = supportedMime();
+  if (!mimeType) {
+    window.alert('当前浏览器不支持 canvas 视频录制，请换 Chrome / Edge 最新版。');
+    isExporting.value = false;
+    wasExporting = false;
+    stopPlayback();
+    return;
+  }
   const chunks = [];
 
   mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: bitrateForQuality() });
@@ -760,6 +821,7 @@ const exportCurrentTask = async () => {
     if (event.data.size) chunks.push(event.data);
   };
   mediaRecorder.onstop = () => {
+    exportStatus.value = '生成文件';
     stream.getTracks().forEach((track) => track.stop());
     const type = mimeType || 'video/webm';
     const blob = new Blob(chunks, { type });
@@ -767,6 +829,8 @@ const exportCurrentTask = async () => {
     exportedUrl.value = url;
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
     triggerDownload(url, `${tasks.value[selectedTaskIndex.value]?.baseName || 'reels'}_${Date.now()}.${ext}`);
+    exportProgress.value = 1;
+    exportStatus.value = `已导出 ${ext.toUpperCase()}`;
     isExporting.value = false;
     wasExporting = false;
     stopPlayback();
@@ -774,12 +838,14 @@ const exportCurrentTask = async () => {
     drawPreview();
   };
 
-  mediaRecorder.start(250);
+  mediaRecorder.start();
   const startedAt = performance.now();
   const tick = () => {
     if (!isExporting.value) return;
     const elapsed = (performance.now() - startedAt) / 1000;
     previewTime.value = Math.min(elapsed, duration);
+    exportProgress.value = Math.min(0.99, previewTime.value / duration);
+    exportStatus.value = `导出 ${formatDuration(previewTime.value)} / ${formatDuration(duration)}`;
     if (videoEl.value && media.videoUrl && media.videoDuration && videoEl.value.ended) {
       videoEl.value.currentTime = elapsed % media.videoDuration;
       videoEl.value.play().catch(() => {});
