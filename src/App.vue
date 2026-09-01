@@ -98,39 +98,100 @@
           </Panel>
 
           <Panel title="正文样式">
-            <SliderControl v-model="overlayState.fontsize" label="正文字号" :min="20" :max="120" />
-            <SliderControl v-model="overlayState.text_width" label="折行宽度" :min="360" :max="1000" :step="10" />
-            <SliderControl v-model="overlayState.line_spacing" label="行距" :min="0" :max="60" />
-            <SliderControl v-model="overlayState.scroll_speed" label="滚动速度" :min="0.2" :max="2" :step="0.1" suffix="x" />
+            <SelectField v-model="overlayState.text_align" label="正文对齐" :options="alignOptions" />
+            <SliderControl v-model="overlayState.fontsize" label="正文字号" :min="20" :max="140" />
+            <SliderControl v-model="overlayState.font_weight" label="正文粗细" :min="100" :max="900" :step="100" />
+            <SliderControl v-model="overlayState.text_width" label="折行宽度" :min="300" :max="1080" :step="10" />
+            <SliderControl v-model="overlayState.line_spacing" label="行距" :min="0" :max="80" />
+            <SliderControl v-model="overlayState.scroll_letter_spacing" label="字距" :min="0" :max="20" />
             <ColorField v-model="overlayState.color" label="正文颜色" />
-            <CheckField v-model="overlayState.use_stroke" label="文字黑边" />
-            <CheckField v-model="overlayState.shadow_enabled" label="正文阴影" />
+            <CheckField v-model="overlayState.use_stroke" label="开启正文描边" />
+            <ColorField v-model="overlayState.stroke_color" label="描边颜色" />
+            <SliderControl v-model="overlayState.stroke_width" label="描边宽度" :min="0" :max="12" />
+            <CheckField v-model="overlayState.shadow_enabled" label="开启正文阴影" />
+            <ColorField v-model="overlayState.shadow_color" label="阴影颜色" />
+            <SliderControl v-model="overlayState.shadow_blur" label="阴影模糊" :min="0" :max="30" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.scroll_shadow_x" label="阴影 X" />
+              <NumberField v-model="overlayState.scroll_shadow_y" label="阴影 Y" />
+            </div>
           </Panel>
 
           <Panel title="标题样式">
-            <SliderControl v-model="overlayState.scroll_title_fontsize" label="标题字号" :min="24" :max="120" />
-            <SliderControl v-model="overlayState.scroll_title_gap" label="标题间距" :min="0" :max="120" />
+            <SelectField v-model="overlayState.scroll_title_align" label="标题对齐" :options="alignOptions" />
+            <SliderControl v-model="overlayState.scroll_title_fontsize" label="标题字号" :min="20" :max="140" />
+            <SliderControl v-model="overlayState.scroll_title_font_weight" label="标题粗细" :min="100" :max="900" :step="100" />
+            <SliderControl v-model="overlayState.scroll_title_text_width" label="标题宽度" :min="300" :max="1080" :step="10" />
+            <SliderControl v-model="overlayState.scroll_title_gap" label="标题间距" :min="0" :max="160" />
+            <SliderControl v-model="overlayState.scroll_title_line_spacing" label="标题行距" :min="0" :max="60" />
+            <SliderControl v-model="overlayState.scroll_title_letter_spacing" label="标题字距" :min="0" :max="20" />
             <ColorField v-model="overlayState.scroll_title_color" label="标题颜色" />
             <CheckField v-model="overlayState.scroll_title_fixed" label="固定标题" />
+            <CheckField v-model="overlayState.scroll_title_auto_fit" label="标题智能缩放" />
+            <NumberField v-model="overlayState.scroll_title_max_height" label="标题最大高度" :min="0" />
             <CheckField v-model="overlayState.scroll_title_shadow_enabled" label="标题阴影" />
+            <ColorField v-model="overlayState.scroll_title_shadow_color" label="标题阴影颜色" />
+            <SliderControl v-model="overlayState.scroll_title_shadow_blur" label="标题阴影模糊" :min="0" :max="30" />
+            <CheckField v-model="overlayState.titleStrokeEnabled" label="标题描边" />
+            <ColorField v-model="overlayState.scroll_title_stroke_color" label="标题描边颜色" />
+            <SliderControl v-model="overlayState.scroll_title_stroke_width" label="标题描边宽度" :min="0" :max="12" />
           </Panel>
 
-          <Panel title="裁切窗口">
+          <Panel title="位置与滚动">
+            <button class="rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" @click="centerOverlayDefaults">居中复位</button>
             <div class="grid grid-cols-2 gap-3">
-              <NumberField v-model="overlayState.x" label="X" />
-              <NumberField v-model="overlayState.y" label="Y" />
-              <NumberField v-model="overlayState.w" label="W" />
-              <NumberField v-model="overlayState.h" label="H" />
+              <NumberField v-model="overlayState.scroll_from_x" label="正文起点 X" />
+              <NumberField v-model="overlayState.scroll_to_x" label="正文终点 X" />
+              <NumberField v-model="overlayState.scroll_from_y" label="正文起点 Y" />
+              <NumberField v-model="overlayState.scroll_to_y" label="正文终点 Y" />
             </div>
-            <SliderControl v-model="overlayState.feather_top" label="顶部羽化" :min="0" :max="400" />
-            <SliderControl v-model="overlayState.feather_bottom" label="底部羽化" :min="0" :max="400" />
+            <SliderControl v-model="overlayState.scroll_speed" label="滚动速度" :min="0.2" :max="2" :step="0.1" suffix="x" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.scroll_offset_x" label="整体偏移 X" />
+              <NumberField v-model="overlayState.scroll_offset_y" label="整体偏移 Y" />
+              <NumberField v-model="overlayState.scroll_title_x" label="标题中心 X" />
+              <NumberField v-model="overlayState.scroll_title_y" label="标题顶部 Y" />
+            </div>
+            <CheckField v-model="overlayState.scroll_static" label="正文固定显示" />
+            <CheckField v-model="overlayState.scroll_auto_stop" label="智能自动停止" />
+            <NumberField v-model="overlayState.scroll_auto_stop_lead" label="提前停稳秒数" :min="0" />
+            <CheckField v-model="overlayState.scroll_auto_fit" label="正文智能缩小" />
+            <NumberField v-model="overlayState.scroll_min_fontsize" label="最小字号" :min="8" />
+          </Panel>
+
+          <Panel title="裁切与羽化">
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.x" label="裁切 X" />
+              <NumberField v-model="overlayState.y" label="裁切 Y" />
+              <NumberField v-model="overlayState.w" label="裁切 W" />
+              <NumberField v-model="overlayState.h" label="裁切 H" />
+            </div>
+            <SliderControl v-model="overlayState.feather_top" label="顶部羽化" :min="0" :max="500" />
+            <SliderControl v-model="overlayState.feather_bottom" label="底部羽化" :min="0" :max="500" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.feather_top_offset" label="上羽化偏移" />
+              <NumberField v-model="overlayState.feather_bottom_offset" label="下羽化偏移" />
+            </div>
           </Panel>
 
           <Panel title="背景框">
             <CheckField v-model="overlayState.bg_enabled" label="开启背景框" />
             <ColorField v-model="overlayState.bg_color" label="背景颜色" />
             <SliderControl v-model="overlayState.bg_opacity" label="透明度" :min="0" :max="255" />
-            <SliderControl v-model="overlayState.bg_radius" label="圆角" :min="0" :max="60" />
+            <SliderControl v-model="overlayState.bg_radius" label="圆角" :min="0" :max="80" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.bg_padding_top" label="Padding 上" />
+              <NumberField v-model="overlayState.bg_padding_bottom" label="Padding 下" />
+              <NumberField v-model="overlayState.bg_padding_left" label="Padding 左" />
+              <NumberField v-model="overlayState.bg_padding_right" label="Padding 右" />
+            </div>
+            <CheckField v-model="overlayState.bg_blur_enabled" label="磨砂模糊" />
+            <SliderControl v-model="overlayState.bg_blur_amount" label="模糊强度" :min="1" :max="40" />
+            <CheckField v-model="overlayState.bg_border_enabled" label="背景边框" />
+            <ColorField v-model="overlayState.bg_border_color" label="边框颜色" />
+            <SliderControl v-model="overlayState.bg_border_width" label="边框宽度" :min="1" :max="16" />
+            <SelectField v-model="overlayState.bg_border_style" label="边框样式" :options="borderStyleOptions" />
+            <SliderControl v-model="overlayState.bg_border_opacity" label="边框透明度" :min="0" :max="100" />
           </Panel>
         </div>
       </aside>
@@ -255,21 +316,64 @@ const selectedTaskIndex = ref(0);
 const overlayState = reactive(createScrollOverlay({
   scroll_title: 'IN SEPTEMBER, SAY THIS PRAYER!',
   content: '1. God walks with me.\n2. God guides my steps.\n3. God has a beautiful plan for me.\n4. I am protected from all evil.\n5. Every challenge is a stepping stone.',
-  fontsize: 70,
+  fontsize: 64,
+  font_weight: 800,
+  text_align: 'center',
   text_width: 900,
   line_spacing: 8,
+  scroll_letter_spacing: 0,
+  use_stroke: true,
+  stroke_color: '#000000',
+  stroke_width: 3,
+  shadow_enabled: true,
+  shadow_color: '#000000',
+  shadow_blur: 6,
+  scroll_shadow_x: 0,
+  scroll_shadow_y: 3,
+  scroll_title_fontsize: 48,
+  scroll_title_font_weight: 900,
+  scroll_title_align: 'center',
+  scroll_title_text_width: 860,
+  scroll_title_line_spacing: 0,
+  scroll_title_letter_spacing: 0,
+  scroll_title_auto_fit: true,
+  scroll_title_max_height: 150,
+  scroll_title_x: 540,
+  scroll_title_y: 400,
+  scroll_title_stroke_color: '#000000',
+  scroll_title_stroke_width: 3,
+  scroll_title_shadow_enabled: true,
+  scroll_title_shadow_color: '#000000',
+  scroll_title_shadow_blur: 8,
+  titleStrokeEnabled: true,
   feather_top: 150,
   feather_bottom: 100,
+  feather_top_offset: 0,
+  feather_bottom_offset: 0,
   bg_opacity: 160,
   bg_radius: 16,
   bg_padding_top: 50,
   bg_padding_bottom: 50,
   bg_padding_left: 20,
   bg_padding_right: 20,
+  bg_blur_enabled: false,
+  bg_blur_amount: 10,
+  bg_border_enabled: false,
+  bg_border_color: '#FFD700',
+  bg_border_width: 3,
+  bg_border_style: 'solid',
+  bg_border_opacity: 100,
+  scroll_from_x: 540,
+  scroll_to_x: 540,
   scroll_from_y: 1800,
   scroll_to_y: -200,
+  scroll_offset_x: 0,
+  scroll_offset_y: 0,
+  scroll_static: false,
   scroll_auto_stop: true,
   scroll_auto_stop_lead: 0.5,
+  scroll_auto_fit: false,
+  scroll_min_fontsize: 18,
 }));
 
 const media = reactive({
@@ -332,6 +436,27 @@ const formatDuration = (value) => {
   const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
   return `${mins}:${secs}`;
 };
+const centerOverlayDefaults = () => {
+  overlayState.x = 40;
+  overlayState.y = 400;
+  overlayState.w = 1000;
+  overlayState.h = 1120;
+  overlayState.text_align = 'center';
+  overlayState.scroll_title_align = 'center';
+  overlayState.text_width = 900;
+  overlayState.scroll_title_text_width = 860;
+  overlayState.scroll_from_x = 540;
+  overlayState.scroll_to_x = 540;
+  overlayState.scroll_from_y = 1800;
+  overlayState.scroll_to_y = -200;
+  overlayState.scroll_offset_x = 0;
+  overlayState.scroll_offset_y = 0;
+  overlayState.scroll_title_x = 540;
+  overlayState.scroll_title_y = 400;
+  overlayState.feather_top_offset = 0;
+  overlayState.feather_bottom_offset = 0;
+};
+
 
 const syncSelectedTask = () => {
   const current = tasks.value[selectedTaskIndex.value];
@@ -452,17 +577,22 @@ const drawVideoBackground = (ctx, canvas, video) => {
   ctx.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
 };
 
-const normalizeOverlayForNative = () => ({
-  ...JSON.parse(JSON.stringify(overlayState)),
-  text_align: overlayState.align || overlayState.text_align || 'center',
-  bg_opacity: overlayState.bg_opacity <= 1 ? Math.round(overlayState.bg_opacity * 255) : overlayState.bg_opacity,
-  bg_padding_top: overlayState.bg_padding_top ?? overlayState.bg_pt ?? 46,
-  bg_padding_bottom: overlayState.bg_padding_bottom ?? overlayState.bg_pb ?? 46,
-  bg_padding_left: overlayState.bg_padding_left ?? overlayState.bg_px ?? 22,
-  bg_padding_right: overlayState.bg_padding_right ?? overlayState.bg_px ?? 22,
-  scroll_title_shadow_enabled: overlayState.scroll_title_shadow_enabled ?? true,
-  end: activeDuration.value,
-});
+const normalizeOverlayForNative = () => {
+  const normalized = {
+    ...JSON.parse(JSON.stringify(overlayState)),
+    text_align: overlayState.text_align || overlayState.align || 'center',
+    scroll_title_align: overlayState.scroll_title_align || overlayState.text_align || 'center',
+    bg_opacity: overlayState.bg_opacity <= 1 ? Math.round(overlayState.bg_opacity * 255) : overlayState.bg_opacity,
+    bg_padding_top: overlayState.bg_padding_top ?? overlayState.bg_pt ?? 46,
+    bg_padding_bottom: overlayState.bg_padding_bottom ?? overlayState.bg_pb ?? 46,
+    bg_padding_left: overlayState.bg_padding_left ?? overlayState.bg_px ?? 22,
+    bg_padding_right: overlayState.bg_padding_right ?? overlayState.bg_px ?? 22,
+    scroll_title_shadow_enabled: overlayState.scroll_title_shadow_enabled ?? true,
+    scroll_title_stroke_width: overlayState.titleStrokeEnabled ? overlayState.scroll_title_stroke_width : 0,
+    end: activeDuration.value,
+  };
+  return normalized;
+};
 
 const drawPreview = () => {
   const canvas = previewCanvas.value;
