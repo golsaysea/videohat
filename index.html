@@ -3,384 +3,445 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VideoKit Core - Canvas GPU 渲染引擎</title>
+    <title>VideoKit Core - 满血规格引擎</title>
     <style>
-        /* 工业级暗黑 UI 设计 */
-        :root { --bg: #0b0c10; --panel: #1f2833; --accent: #66fcf1; --text: #c5c6c7; }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
-        body { background: var(--bg); color: var(--text); padding: 30px; font-size: 13px; }
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; --border: #30363d; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 20px; font-size: 12px; height: 100vh; display: flex; overflow: hidden; gap: 20px; }
         
-        .header { margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 15px; }
-        .header h1 { color: var(--accent); font-size: 26px; font-weight: 300; letter-spacing: 1px; }
-        .badge { background: rgba(102, 252, 241, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 4px; font-size: 12px; border: 1px solid var(--accent); vertical-align: middle; margin-left: 10px; font-weight: bold; }
+        /* 侧边栏 */
+        .sidebar { width: 500px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .sidebar-scroll { overflow-y: auto; flex: 1; }
+        .sidebar-scroll::-webkit-scrollbar { width: 6px; } .sidebar-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
         
-        .app-container { display: flex; gap: 30px; max-width: 1400px; margin: 0 auto; align-items: flex-start; }
-        @media (max-width: 900px) { .app-container { flex-direction: column; } }
-        
-        /* 左侧控制台 */
-        .controls { flex: 1; max-width: 480px; background: var(--panel); border-radius: 8px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .form-group { margin-bottom: 15px; }
-        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        label { display: block; color: #aaa; margin-bottom: 5px; font-size: 12px; }
-        input[type="text"], input[type="number"], textarea { width: 100%; background: #0b0c10; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 4px; transition: 0.3s; }
-        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
-        textarea { height: 220px; resize: vertical; line-height: 1.5; font-family: Consolas, monospace; }
-        
-        .upload-btn { background: #111; color: #fff; padding: 15px; text-align: center; border: 1px dashed var(--accent); border-radius: 6px; cursor: pointer; position: relative; margin-bottom: 20px; transition: 0.2s; }
-        .upload-btn:hover { background: #222; }
-        .upload-btn input { position: absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer; }
-        
-        .btn-run { width: 100%; background: var(--accent); color: #000; font-weight: bold; font-size: 16px; padding: 15px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
-        .btn-run:disabled { background: #444; color: #777; cursor: not-allowed; }
-        .btn-run:hover:not(:disabled) { box-shadow: 0 0 15px rgba(102, 252, 241, 0.4); }
+        /* 预览区 */
+        .main-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: #000; border-radius: 8px; border: 1px solid var(--border); }
 
-        /* 右侧画布预览区 */
-        .preview-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
-        .canvas-wrapper { position: relative; width: 100%; max-width: 450px; background: #000; border-radius: 10px; overflow: hidden; box-shadow: 0 15px 40px rgba(0,0,0,0.8); border: 1px solid #333; }
-        /* 强制保持 9:16 物理比例视窗 */
-        .canvas-wrapper::before { content: ""; display: block; padding-top: 177.77%; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .header { padding: 20px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10; border-radius: 8px 8px 0 0; }
+        .header h1 { font-size: 18px; color: #fff; display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+        .badge { background: rgba(88, 166, 255, 0.15); color: var(--accent); padding: 2px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--accent); font-weight: bold; }
         
-        .progress-bar { width: 100%; max-width: 450px; height: 4px; background: #222; margin-top: 15px; border-radius: 2px; overflow: hidden; }
-        #prog { height: 100%; width: 0%; background: var(--accent); }
+        .section { padding: 15px 20px; border-bottom: 1px solid var(--border); }
+        .sec-title { font-size: 12px; font-weight: bold; color: var(--accent); text-transform: uppercase; margin-bottom: 15px; }
         
-        #final-video { width: 100%; max-width: 450px; margin-top: 20px; border-radius: 10px; border: 2px solid var(--accent); display: none; }
-        .log-box { margin-top: 15px; color: #aaa; font-family: monospace; font-size: 12px; padding: 10px; background: #000; border-radius: 4px; width: 100%; max-width: 450px; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+        label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+        input[type="text"], input[type="number"], input[type="color"], textarea { 
+            width: 100%; background: #010409; border: 1px solid var(--border); color: #fff; padding: 7px; border-radius: 4px; font-size: 12px; transition: 0.2s;
+        }
+        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+        textarea { height: 90px; resize: vertical; font-family: Consolas, monospace; }
+        input[type="color"] { padding: 0; height: 26px; cursor: pointer; }
+        
+        .chk-group { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; color: #c9d1d9; cursor: pointer; }
+        input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; }
+
+        .btn { background: var(--accent); color: #fff; border: none; padding: 12px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; text-align: center; font-size: 13px; }
+        .btn:hover { background: #3182ce; box-shadow: 0 0 10px rgba(88, 166, 255, 0.4); }
+        .btn-dark { background: #21262d; border: 1px solid var(--border); } .btn-dark:hover { background: #30363d; }
+        
+        /* 画布区样式 */
+        .stage-toolbar { position: absolute; top: 20px; display: flex; gap: 10px; z-index: 10; }
+        .upload-wrapper { position: relative; overflow: hidden; display: inline-block; cursor: pointer; }
+        .upload-wrapper input[type="file"] { position: absolute; right: 0; top: 0; opacity: 0; cursor: pointer; font-size: 100px; }
+        
+        .canvas-container { position: relative; width: auto; height: 80%; aspect-ratio: 9/16; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border: 1px solid #333; background: #111; border-radius: 8px; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        .prog-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 5px; background: rgba(255,255,255,0.2); cursor: pointer; }
+        #prog-bar { height: 100%; background: var(--accent); width: 0%; pointer-events: none; }
+        
+        #final-video { position: absolute; bottom: 20px; right: 20px; height: 250px; border-radius: 8px; border: 2px solid var(--accent); display: none; box-shadow: 0 10px 40px rgba(0,0,0,0.8); z-index: 100; }
+        #source-video { display: none; }
     </style>
 </head>
 <body>
 
-<div class="app-container">
-    <div class="controls">
-        <div class="header">
-            <h1>VideoKit Engine <span class="badge">Canvas Native 直录版</span></h1>
-            <p>1:1 像素级复刻 reels-overlay 源码逻辑，0 内存爆炸风险</p>
+<!-- 左侧控制台 -->
+<div class="sidebar" id="panel">
+    <div class="header">
+        <h1>VideoKit Engine <span class="badge">V3 规格严格映射</span></h1>
+        <p style="color: #8b949e; font-size: 11px; margin-top: 4px;">底层坐标解耦 / 智能停靠 / Canvas 物理羽化</p>
+    </div>
+
+    <div class="sidebar-scroll">
+        <div class="section">
+            <div class="sec-title">1. 画布裁切窗口 (Viewport)</div>
+            <div class="row">
+                <div><label>裁切X (x)</label><input type="number" id="v-x" value="40"></div>
+                <div><label>裁切Y (y)</label><input type="number" id="v-y" value="400"></div>
+                <div><label>裁切宽 (w)</label><input type="number" id="v-w" value="1000"></div>
+                <div><label>裁切高 (h)</label><input type="number" id="v-h" value="1120"></div>
+            </div>
+            <div class="row" style="border-top: 1px dashed #30363d; padding-top: 12px; margin-top: 4px;">
+                <div><label>整体偏移 X (scroll_offset_x)</label><input type="number" id="v-off-x" value="0"></div>
+                <div><label>整体偏移 Y (scroll_offset_y)</label><input type="number" id="v-off-y" value="0"></div>
+            </div>
         </div>
 
-        <div class="upload-btn">
-            <span id="file-name" style="font-weight: bold; font-size: 14px; color: var(--accent);">📥 点击加载无字幕原片</span>
-            <input type="file" id="video-file" accept="video/*">
+        <div class="section">
+            <div class="sec-title">2. 标题 (Scroll Title)</div>
+            <input type="text" id="v-title" value="IN SEPTEMBER, SAY THIS PRAYER!" style="margin-bottom:12px;">
+            <div class="row row-3">
+                <label class="chk-group"><input type="checkbox" id="v-t-fixed" checked> 绝对吸顶 (固定)</label>
+                <label class="chk-group"><input type="checkbox" id="v-t-indep"> 独立占位 (不挤占)</label>
+                <label class="chk-group"><input type="checkbox" id="v-t-shadow" checked> 开启阴影特效</label>
+            </div>
+            <div class="row row-3">
+                <div><label>标题字号</label><input type="number" id="v-t-size" value="56"></div>
+                <div><label>下间距 (gap)</label><input type="number" id="v-t-gap" value="20"></div>
+                <div><label>字体颜色</label><input type="color" id="v-t-color" value="#FFE81F"></div>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label>📌 悬浮标题 (固定坐标，渲染独立图层)</label>
-            <input type="text" id="cfg-title" value="In September, say this prayer!">
-        </div>
-        
-        <div class="form-group">
-            <label>📝 滚动主文案 (自动计算物理高度与折行)</label>
-            <textarea id="cfg-body" spellcheck="false">1. God walks with me.
+        <div class="section">
+            <div class="sec-title">3. 滚动正文 (Content)</div>
+            <textarea id="v-body" spellcheck="false">1. God walks with me.
 2. God guides my steps.
 3. God has a beautiful plan for me.
 4. I am protected from all evil.
 5. Every challenge is a stepping stone.
-6. My heart is full of peace.
-7. I attract positive energy.
-8. Today brings new opportunities.
-9. I am grateful for everything I have.
-10. The future is bright and clear.</textarea>
+6. My heart is full of peace.</textarea>
+            <div class="row row-3" style="margin-top:12px;">
+                <div><label>字号 (fontsize)</label><input type="number" id="v-b-size" value="48"></div>
+                <div><label>行距 (line_spacing)</label><input type="number" id="v-b-line" value="8"></div>
+                <div><label>折行宽 (text_width)</label><input type="number" id="v-b-width" value="900"></div>
+            </div>
+            <div class="row row-3">
+                <label class="chk-group"><input type="checkbox" id="v-b-stroke" checked> 开启描边</label>
+                <label class="chk-group"><input type="checkbox" id="v-b-shadow" checked> 开启投影</label>
+                <div><label>文字颜色</label><input type="color" id="v-b-color" value="#ffffff"></div>
+            </div>
         </div>
 
-        <div class="form-row">
-            <div><label>正文字号 (px)</label><input type="number" id="cfg-size" value="65"></div>
-            <div><label>正文宽度 (决定折行)</label><input type="number" id="cfg-width" value="900"></div>
-        </div>
-        
-        <div class="form-row">
-            <div><label>底部留白区 (Y偏置)</label><input type="number" id="cfg-bottom" value="150"></div>
-            <div><label>提前完成 (秒)</label><input type="number" id="cfg-early" value="0.5" step="0.1"></div>
-        </div>
-
-        <div style="border-top: 1px solid #333; margin: 15px 0;"></div>
-        
-        <div class="form-row">
-            <div><label>上羽化强度</label><input type="number" id="feather-top" value="300"></div>
-            <div><label>上羽化偏移 (防遮挡标题)</label><input type="number" id="offset-top" value="480"></div>
-        </div>
-        <div class="form-row">
-            <div><label>下羽化强度</label><input type="number" id="feather-bot" value="80"></div>
-            <div><label>下羽化偏移 (距底部)</label><input type="number" id="offset-bot" value="0"></div>
+        <div class="section">
+            <div class="sec-title">4. 轨迹与智能适配 (Motion & Smart Fit)</div>
+            <div class="row row-3">
+                <div><label>起步Y (from_y)</label><input type="number" id="v-from-y" value="1800"></div>
+                <div><label>终点Y (to_y)</label><input type="number" id="v-to-y" value="-200"></div>
+                <div><label>中心X (from_x)</label><input type="number" id="v-from-x" value="540"></div>
+            </div>
+            <div class="row">
+                <label class="chk-group"><input type="checkbox" id="v-auto-stop" checked> 智能自动停止 (auto_stop)</label>
+                <div><label>提前停稳时间(s)</label><input type="number" id="v-lead" value="0.5" step="0.1"></div>
+            </div>
+            <label class="chk-group" style="margin-bottom:0;"><input type="checkbox" id="v-static"> 强制固定显示 (scroll_static)</label>
         </div>
 
-        <button id="btn-start" class="btn-run">🔥 启动实时硬件渲染</button>
-        <button id="btn-preview" class="btn-run" style="background: #333; color: #fff; margin-top: 10px;">▶️ 仅在画布预览 (不导出)</button>
-    </div>
-
-    <div class="preview-area">
-        <div class="canvas-wrapper">
-            <!-- 核心渲染画板，严格 1080x1920 物理像素 -->
-            <canvas id="render-canvas" width="1080" height="1920"></canvas>
+        <div class="section">
+            <div class="sec-title">5. 羽化与卡片背景 (Feather & Background)</div>
+            <div class="row">
+                <div><label>上羽化强度 (px)</label><input type="number" id="v-f-top" value="150"></div>
+                <div><label>下羽化强度 (px)</label><input type="number" id="v-f-bot" value="100"></div>
+            </div>
+            <div style="border-top: 1px dashed #30363d; padding-top: 12px; margin-top: 4px;">
+                <label class="chk-group"><input type="checkbox" id="v-bg-on" checked> 开启卡片背景 (bg_enabled)</label>
+                <div class="row row-3">
+                    <div><label>背景颜色</label><input type="color" id="v-bg-color" value="#000000"></div>
+                    <div><label>透明度 (0-255)</label><input type="number" id="v-bg-opa" value="160"></div>
+                    <div><label>圆角 (radius)</label><input type="number" id="v-bg-rad" value="16"></div>
+                </div>
+                <div class="row row-3">
+                    <div><label>Padding 上</label><input type="number" id="v-bg-pt" value="50"></div>
+                    <div><label>Padding 下</label><input type="number" id="v-bg-pb" value="50"></div>
+                    <div><label>Padding 左右</label><input type="number" id="v-bg-px" value="20"></div>
+                </div>
+            </div>
         </div>
-        <div class="progress-bar"><div id="prog"></div></div>
-        <div class="log-box" id="log-out">系统就绪... 等待媒体流注入。</div>
-        
-        <video id="final-video" controls autoplay playsinline></video>
     </div>
 </div>
 
-<script>
-    // ==========================================
-    // 核心引擎：完美复刻 ReelsOverlay Canvas API
-    // ==========================================
+<!-- 右侧画板 -->
+<div class="main-stage">
+    <div class="stage-toolbar">
+        <div class="upload-wrapper btn btn-dark">
+            📁 加载无字幕底层原片
+            <input type="file" id="video-file" accept="video/*">
+        </div>
+        <button class="btn btn-dark" id="btn-play">▶️ 播放 / 暂停 (WYSIWYG)</button>
+        <button class="btn" id="btn-record">🔴 直录导出带原声 MP4</button>
+    </div>
 
-    const canvas = document.getElementById('render-canvas');
+    <div class="canvas-container">
+        <!-- 强制物理宽高，绝不因设备像素比失真 -->
+        <canvas id="main-canvas" width="1080" height="1920"></canvas>
+        <div class="prog-bar-container" id="timeline"><div id="prog-bar"></div></div>
+    </div>
+    
+    <video id="final-video" controls autoplay playsinline></video>
+    <video id="source-video" crossorigin="anonymous" playsinline loop></video>
+</div>
+
+<script>
+    // =======================================================
+    // VideoKit Canvas 渲染引擎 (严格依据移植说明书公式)
+    // =======================================================
+
+    const canvas = document.getElementById('main-canvas');
     const ctx = canvas.getContext('2d');
     
-    // 离屏画布：专门用于绘制滚动文字并应用原生羽化遮罩
-    const textCanvas = document.createElement('canvas');
-    textCanvas.width = 1080;
-    textCanvas.height = 1920;
-    const tCtx = textCanvas.getContext('2d');
-
-    // 隐藏的源视频播放器
-    const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
-    video.playsInline = true;
-
-    // 状态管理
-    let isRendering = false;
-    let isRecording = false;
-    let animId;
-    let mediaRecorder;
-    let chunks = [];
-    let p = {}; 
+    // 临时画布：专门用于文档中“通过临时 Canvas + 渐变透明遮罩实现羽化”
+    const tmpCanvas = document.createElement('canvas');
+    const tc = tmpCanvas.getContext('2d');
     
-    // Web Audio API 音轨路由
+    const video = document.getElementById('source-video');
+    let isPlaying = false, animId, mediaRecorder, chunks = [];
     let audioCtx, sourceNode, destNode;
 
-    // 1. 本地媒体流挂载
-    document.getElementById('video-file').addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            video.src = URL.createObjectURL(file);
-            video.load();
-            document.getElementById('file-name').innerText = `✅ 媒体已挂载: ${file.name}`;
-            log(`视频流解析成功。`);
-            
-            // 初始化第一帧
-            video.onloadeddata = () => {
-                video.currentTime = 0.1; 
-                setTimeout(drawFrame, 100); 
-            };
-        }
-    });
+    // --- 探针封装 ---
+    const v = id => document.getElementById(id).value;
+    const n = id => Number(v(id)) || 0;
+    const c = id => document.getElementById(id).checked;
 
-    const log = (msg) => document.getElementById('log-out').innerHTML = `> ${msg}`;
-
-    // 2. 文本自动折行探针 (_drawScrollTextBlock 核心逻辑)
+    // --- 自动折行算法 (wrapText) ---
     function wrapText(context, text, maxWidth) {
-        const words = text.replace(/\n/g, ' \n ').split(' ');
-        let lines = [];
-        let currentLine = '';
-        for (let i = 0; i < words.length; i++) {
-            if (words[i] === '\n') {
-                lines.push(currentLine); currentLine = ''; continue;
+        const lines = [];
+        for (const paragraph of text.split('\n')) {
+            const words = paragraph.split(' ');
+            let currentLine = words[0] || '';
+            for (let i = 1; i < words.length; i++) {
+                const word = words[i];
+                if (context.measureText(currentLine + " " + word).width < maxWidth) currentLine += " " + word;
+                else { lines.push(currentLine); currentLine = word; }
             }
-            let testLine = currentLine + words[i] + ' ';
-            let metrics = context.measureText(testLine);
-            if (metrics.width > maxWidth && currentLine !== '') {
-                lines.push(currentLine); currentLine = words[i] + ' ';
-            } else {
-                currentLine = testLine;
-            }
+            lines.push(currentLine);
         }
-        lines.push(currentLine);
         return lines;
     }
 
-    // 3. 启动引擎 (包含录制)
-    document.getElementById('btn-start').addEventListener('click', () => startEngine(true));
-    document.getElementById('btn-preview').addEventListener('click', () => startEngine(false));
+    // --- 圆角背景算法 ---
+    function drawRoundRect(context, x, y, w, h, r) {
+        context.beginPath(); context.moveTo(x + r, y); context.lineTo(x + w - r, y);
+        context.quadraticCurveTo(x + w, y, x + w, y + r); context.lineTo(x + w, y + h - r);
+        context.quadraticCurveTo(x + w, y + h, x + w - r, y + h); context.lineTo(x + r, y + h);
+        context.quadraticCurveTo(x, y + h, x, y + h - r); context.lineTo(x, y + r);
+        context.quadraticCurveTo(x, y, x + r, y); context.closePath();
+    }
 
-    function startEngine(record) {
-        if (!video.src) return alert("防呆拦截：请先在左侧上传原视频文件。");
+    // --- 构建 Overlay 对象 (映射规格字典) ---
+    function getOv() {
+        return {
+            x: n('v-x'), y: n('v-y'), w: n('v-w'), h: n('v-h'),
+            scroll_offset_x: n('v-off-x'), scroll_offset_y: n('v-off-y'),
+            
+            scroll_title: v('v-title'), scroll_title_fixed: c('v-t-fixed'), scroll_title_independent: c('v-t-indep'),
+            scroll_title_fontsize: n('v-t-size'), scroll_title_color: v('v-t-color'), scroll_title_gap: n('v-t-gap'),
+            scroll_title_shadow_enabled: c('v-t-shadow'),
+            
+            content: v('v-body').toUpperCase(), fontsize: n('v-b-size'), text_width: n('v-b-width'), line_spacing: n('v-b-line'),
+            color: v('v-b-color'), shadow_enabled: c('v-b-shadow'), use_stroke: c('v-b-stroke'),
+            
+            scroll_from_y: n('v-from-y'), scroll_to_y: n('v-to-y'), scroll_from_x: n('v-from-x'),
+            scroll_static: c('v-static'), scroll_auto_stop: c('v-auto-stop'), scroll_auto_stop_lead: n('v-lead'),
+            
+            feather_top: n('v-f-top'), feather_bottom: n('v-f-bot'),
+            
+            bg_enabled: c('v-bg-on'), bg_color: v('v-bg-color'), bg_opacity: n('v-bg-opa'), bg_radius: n('v-bg-rad'),
+            bg_pt: n('v-bg-pt'), bg_pb: n('v-bg-pb'), bg_px: n('v-bg-px'),
+            
+            start: 0, end: video.duration || 10
+        };
+    }
+
+    // =========================================================
+    // 渲染心脏：drawScrollOverlay (1:1 翻译移植说明书公式)
+    // =========================================================
+    function drawScrollOverlay(ov, currentTime) {
+        // [底层视频，自适应居中]
+        ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, 1080, 1920);
+        if (video.videoWidth) {
+            const scale = Math.max(1080 / video.videoWidth, 1920 / video.videoHeight);
+            const w = video.videoWidth * scale, h = video.videoHeight * scale;
+            ctx.drawImage(video, (1080 - w) / 2, (1920 - h) / 2, w, h);
+        }
+
+        // [公式 1：视窗坐标与整体偏移解耦]
+        const offsetX = ov.scroll_offset_x, offsetY = ov.scroll_offset_y;
+        const clipX = ov.x + offsetX, clipY = ov.y + offsetY;
+        const clipW = ov.w, clipH = ov.h;
+
+        // [公式 2：卡片背景绘制]
+        if (ov.bg_enabled) {
+            ctx.save();
+            ctx.globalAlpha = ov.bg_opacity / 255;
+            ctx.fillStyle = ov.bg_color;
+            drawRoundRect(ctx, clipX - ov.bg_px, clipY - ov.bg_pt, clipW + ov.bg_px*2, clipH + ov.bg_pt + ov.bg_pb, ov.bg_radius);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // [公式 3：排版计算准备]
+        tmpCanvas.width = clipW; tmpCanvas.height = clipH; // 仅需要裁切区大小的离屏画布以提升性能
+        tc.clearRect(0, 0, clipW, clipH);
         
-        isRecording = record;
+        const lineHeight = ov.fontsize * 1.3 + ov.line_spacing;
+        tc.font = `bold ${ov.fontsize}px Arial, sans-serif`;
+        const lines = wrapText(tc, ov.content, ov.text_width || clipW);
+
+        let titleBlockH = 0, titleLines = [];
+        if (ov.scroll_title) {
+            tc.font = `900 ${ov.scroll_title_fontsize}px Arial, sans-serif`;
+            titleLines = wrapText(tc, ov.scroll_title, clipW);
+            if (!ov.scroll_title_independent) titleBlockH = titleLines.length * (ov.scroll_title_fontsize * 1.2) + ov.scroll_title_gap;
+        }
+
+        // [公式 4：运动方程与 Auto Stop 智能停靠]
+        const duration = Math.max(0.1, ov.end - ov.start);
+        const progress = Math.max(0, Math.min(1, currentTime / Math.max(0.1, duration - ov.scroll_auto_stop_lead)));
+        
+        const fromX = ov.scroll_from_x + offsetX;
+        const toX = fromX; // 规范中 scroll_to_x 默认等于 scroll_from_x
+        const fromY = ov.scroll_from_y + offsetY;
+        let effectiveToY = ov.scroll_to_y + offsetY;
+
+        if (ov.scroll_auto_stop) {
+            const totalTextH = lines.length * lineHeight;
+            const visibleBodyH = clipH - ov.feather_top - ov.feather_bottom - (ov.scroll_title_fixed ? titleBlockH : 0);
+            if (fromY > effectiveToY) {
+                if (totalTextH <= visibleBodyH) effectiveToY = clipY + ov.feather_top + (ov.scroll_title_fixed ? titleBlockH : 0);
+                else effectiveToY = clipY + clipH - ov.feather_bottom - totalTextH;
+            }
+        }
+
+        // X轴/Y轴绝对坐标
+        const textX = fromX;
+        const textY = ov.scroll_static ? 
+                      clipY + ov.feather_top + (ov.scroll_title_fixed ? titleBlockH : 0) : 
+                      fromY + (effectiveToY - fromY) * progress;
+
+        // [离屏绘制] ============================
+        tc.save();
+        tc.translate(-clipX, -clipY); // 将相对坐标系映射至全局
+
+        // 画正文
+        tc.font = `bold ${ov.fontsize}px Arial, sans-serif`;
+        tc.textAlign = 'center'; tc.textBaseline = 'top';
+        tc.fillStyle = ov.color;
+        
+        if (ov.shadow_enabled) { tc.shadowColor = 'rgba(0,0,0,0.8)'; tc.shadowBlur = 6; tc.shadowOffsetY = 3; } 
+        else { tc.shadowColor = 'transparent'; }
+
+        let curY = textY + (ov.scroll_title && !ov.scroll_title_fixed ? titleBlockH : 0);
+        for (const line of lines) {
+            if (ov.use_stroke) { tc.lineWidth = 4; tc.strokeStyle = '#000'; tc.strokeText(line, textX, curY); }
+            tc.fillText(line, textX, curY);
+            curY += lineHeight;
+        }
+
+        // 画随动标题 (如果不固定，则跟正文一起滚动并被羽化)
+        if (ov.scroll_title && ov.scroll_title_fixed === false) {
+            tc.font = `900 ${ov.scroll_title_fontsize}px Arial, sans-serif`;
+            if (ov.scroll_title_shadow_enabled) { tc.shadowColor = 'rgba(0,0,0,0.9)'; tc.shadowBlur = 8; tc.shadowOffsetY = 4; }
+            tc.fillStyle = ov.scroll_title_color;
+            let ty = textY;
+            for (let tl of titleLines) {
+                tc.lineWidth = 4; tc.strokeStyle = '#000'; tc.strokeText(tl, textX, ty);
+                tc.fillText(tl, textX, ty); ty += ov.scroll_title_fontsize * 1.2;
+            }
+        }
+        tc.restore();
+
+        // [公式 5：羽化 destination-in 遮罩]
+        if (ov.feather_top > 0 || ov.feather_bottom > 0) {
+            tc.globalCompositeOperation = 'destination-in';
+            const gradY = tc.createLinearGradient(0, 0, 0, clipH);
+            gradY.addColorStop(0, 'rgba(0,0,0,0)');
+            if (ov.feather_top > 0) gradY.addColorStop(Math.min(1, ov.feather_top / clipH), 'rgba(0,0,0,1)');
+            if (ov.feather_bottom > 0) gradY.addColorStop(Math.max(0, 1 - ov.feather_bottom / clipH), 'rgba(0,0,0,1)');
+            gradY.addColorStop(1, 'rgba(0,0,0,0)');
+            tc.fillStyle = gradY; tc.fillRect(0, 0, clipW, clipH);
+            tc.globalCompositeOperation = 'source-over';
+        }
+
+        // [公式 6：裁切主画面并合并离屏画布]
+        ctx.save();
+        ctx.beginPath(); ctx.rect(clipX, clipY, clipW, clipH); ctx.clip();
+        ctx.drawImage(tmpCanvas, clipX, clipY);
+        ctx.restore();
+
+        // [公式 7：画固定不受羽化影响的顶层标题]
+        if (ov.scroll_title && ov.scroll_title_fixed !== false) {
+            ctx.save();
+            ctx.font = `900 ${ov.scroll_title_fontsize}px Arial, sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            if (ov.scroll_title_shadow_enabled) { ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4; }
+            ctx.fillStyle = ov.scroll_title_color;
+            let fixedY = clipY + (ov.scroll_title_independent ? 0 : ov.feather_top);
+            for (let tl of titleLines) {
+                ctx.lineWidth = 4; ctx.strokeStyle = '#000'; ctx.strokeText(tl, textX, fixedY);
+                ctx.fillText(tl, textX, fixedY); fixedY += ov.scroll_title_fontsize * 1.2;
+            }
+            ctx.restore();
+        }
+    }
+
+    // ==========================================
+    // 界面交互与音画原声直录系统
+    // ==========================================
+    document.getElementById('video-file').addEventListener('change', e => {
+        if(e.target.files[0]) {
+            video.src = URL.createObjectURL(e.target.files[0]);
+            video.onloadeddata = () => renderFrame();
+        }
+    });
+
+    document.getElementById('btn-play').addEventListener('click', () => {
+        if (!video.src) return alert("请加载视频！");
+        if (isPlaying) { video.pause(); isPlaying = false; cancelAnimationFrame(animId); }
+        else { video.play(); isPlaying = true; renderLoop(); }
+    });
+
+    document.getElementById('panel').addEventListener('input', () => { if (!isPlaying && video.src) renderFrame(); });
+    document.getElementById('timeline').addEventListener('click', e => {
+        if (!video.src) return;
+        video.currentTime = (e.clientX - e.target.getBoundingClientRect().left) / e.target.getBoundingClientRect().width * video.duration;
+        if (!isPlaying) renderFrame();
+    });
+
+    function renderFrame() {
+        drawScrollOverlay(getOv(), video.currentTime);
+        if (video.duration) document.getElementById('prog-bar').style.width = `${(video.currentTime / video.duration) * 100}%`;
+    }
+    function renderLoop() { if (!isPlaying) return; renderFrame(); animId = requestAnimationFrame(renderLoop); }
+
+    // 导出录制
+    document.getElementById('btn-record').addEventListener('click', () => {
+        if (!video.src) return alert("请先载入视频！");
+        video.pause(); video.currentTime = 0; isPlaying = false; cancelAnimationFrame(animId);
         document.getElementById('final-video').style.display = 'none';
 
-        // 捕获 UI 参数
-        p = {
-            title: document.getElementById('cfg-title').value,
-            bodyText: document.getElementById('cfg-body').value,
-            fSize: parseInt(document.getElementById('cfg-size').value),
-            tWidth: parseInt(document.getElementById('cfg-width').value),
-            bMargin: parseInt(document.getElementById('cfg-bottom').value),
-            earlyFin: parseFloat(document.getElementById('cfg-early').value),
-            fTop: parseInt(document.getElementById('feather-top').value),
-            oTop: parseInt(document.getElementById('offset-top').value),
-            fBot: parseInt(document.getElementById('feather-bot').value),
-            oBot: parseInt(document.getElementById('offset-bot').value),
-            totalDuration: video.duration
-        };
-        p.lHeight = p.fSize * 1.4; // 动态行高
-
-        // === 音频路由黑科技：捕获视频源声并混入录制流 ===
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             sourceNode = audioCtx.createMediaElementSource(video);
             destNode = audioCtx.createMediaStreamDestination();
-            sourceNode.connect(destNode); // 路由给录制器
-            sourceNode.connect(audioCtx.destination); // 路由给扬声器(预览发声)
+            sourceNode.connect(destNode); sourceNode.connect(audioCtx.destination);
         }
         if (audioCtx.state === 'suspended') audioCtx.resume();
-
-        if (isRecording) {
-            const stream = canvas.captureStream(30); // 30帧视频流
-            const audioTracks = destNode.stream.getAudioTracks();
-            if (audioTracks.length > 0) stream.addTrack(audioTracks[0]); // 注入音轨
-
-            // 探针：寻找当前浏览器支持的最佳编码器 (首选 MP4，兜底 WebM)
-            let mimeType = 'video/webm'; 
-            if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
-            else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
-
-            chunks = [];
-            mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8000000 });
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-            
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(chunks, { type: mimeType });
-                const finalVid = document.getElementById('final-video');
-                finalVid.src = URL.createObjectURL(blob);
-                finalVid.style.display = 'block';
-                log('🎉 压制圆满落幕！已在下方生成高清成品，右键或长按视频即可保存。');
-                toggleButtons(false);
-            };
-            mediaRecorder.start();
-        }
-
-        toggleButtons(true);
-        log(isRecording ? '🚀 录制管线已启动，请耐心观看一遍视频，结束后自动出片...' : '▶️ 实时预览渲染中...');
         
-        video.currentTime = 0;
-        video.play();
-        isRendering = true;
-        renderLoop();
-    }
-
-    function toggleButtons(disabled) {
-        document.getElementById('btn-start').disabled = disabled;
-        document.getElementById('btn-preview').disabled = disabled;
-    }
-
-    // 引擎停止挂钩
-    video.addEventListener('ended', () => {
-        isRendering = false;
-        cancelAnimationFrame(animId);
-        if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop();
-        } else if (!isRecording) {
-            toggleButtons(false);
-            log('预览结束。');
-        }
+        const stream = canvas.captureStream(30);
+        if (destNode.stream.getAudioTracks().length) stream.addTrack(destNode.stream.getAudioTracks()[0]);
+        
+        let mime = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm;codecs=vp9';
+        chunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
+        mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+            const fv = document.getElementById('final-video');
+            fv.src = URL.createObjectURL(new Blob(chunks, { type: mime }));
+            fv.style.display = 'block';
+            document.getElementById('btn-record').innerText = '🔴 直录导出带原声 MP4';
+        };
+        
+        document.getElementById('btn-record').innerText = '⏳ 闪电压制中... (请勿关闭)';
+        mediaRecorder.start();
+        video.play(); isPlaying = true; renderLoop();
     });
 
-    // ==========================================
-    // 4. 核心渲染图层矩阵 (_drawScrollOverlay)
-    // ==========================================
-    function renderLoop() {
-        if (!isRendering) return;
-        drawFrame();
-        animId = requestAnimationFrame(renderLoop);
-    }
-
-    function drawFrame() {
-        // [底层] 绘制原始视频源 (自适应裁切居中)
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, 1080, 1920);
-        if (video.videoWidth) {
-            const scale = Math.max(1080 / video.videoWidth, 1920 / video.videoHeight);
-            const w = video.videoWidth * scale;
-            const h = video.videoHeight * scale;
-            ctx.drawImage(video, (1080 - w) / 2, (1920 - h) / 2, w, h);
-        }
-        
-        tCtx.clearRect(0, 0, 1080, 1920);
-
-        // [数学核心] 动态计算排版与滚动坐标
-        tCtx.font = `bold ${p.fSize}px Arial, sans-serif`;
-        const lines = wrapText(tCtx, p.bodyText, p.tWidth);
-        const textH = lines.length * p.lHeight;
-        
-        const startY = 1920 + p.fSize; 
-        const endY = 1920 - p.bMargin - textH; 
-        
-        const moveD = Math.max(1, p.totalDuration - p.earlyFin);
-        const progress = Math.min(1, video.currentTime / moveD); 
-        const currentY = startY - (startY - endY) * progress;
-
-        // [排版] 在离屏画板绘制滚动文本 (复刻 _drawScrollTextBlock)
-        tCtx.textAlign = 'center';
-        tCtx.textBaseline = 'top';
-        
-        // 极品硬件级发光阴影与描边
-        tCtx.shadowColor = 'rgba(0,0,0,0.85)';
-        tCtx.shadowBlur = 12;
-        tCtx.shadowOffsetX = 3;
-        tCtx.shadowOffsetY = 4;
-        
-        let lineY = currentY;
-        for (let line of lines) {
-            if (line.trim() !== '') {
-                tCtx.lineWidth = Math.max(4, p.fSize * 0.1); // 自适应描边粗细
-                tCtx.strokeStyle = 'black';
-                tCtx.strokeText(line, 540, lineY);
-                tCtx.fillStyle = 'white';
-                tCtx.fillText(line, 540, lineY);
-            }
-            lineY += p.lHeight;
-        }
-
-        // [最强黑科技] 应用 Canvas Alpha 原生渐变羽化遮罩 (性能零损耗)
-        applyFeatherMask(tCtx, p.fTop, p.oTop, p.fBot, p.oBot);
-
-        // [合成] 将羽化处理后的纯文字层，完美盖在视频上
-        ctx.drawImage(textCanvas, 0, 0);
-
-        // [顶层] 独立绘制绝对固定的标题 (不受羽化和裁切影响)
-        if (p.title) {
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            ctx.font = `bold 72px Arial, sans-serif`;
-            ctx.shadowColor = 'rgba(0,0,0,0.9)';
-            ctx.shadowBlur = 15;
-            ctx.shadowOffsetX = 4;
-            ctx.shadowOffsetY = 5;
-            ctx.lineWidth = 7;
-            ctx.strokeStyle = 'black';
-            ctx.strokeText(p.title, 540, p.oTop - 90); // 浮在顶部羽化线之上
-            ctx.fillStyle = '#FFFFFF'; 
-            ctx.fillText(p.title, 540, p.oTop - 90);
-        }
-
-        // 更新底部的进度条
-        document.getElementById('prog').style.width = `${(video.currentTime / p.totalDuration) * 100}%`;
-    }
-
-    // 真正的无损透明度擦除算法 (Feathering)
-    function applyFeatherMask(ctxLayer, tF, tO, bF, bO) {
-        // destination-in: 只保留与新图形重叠的部分，并且继承新图形的透明度 (Alpha)
-        ctxLayer.globalCompositeOperation = 'destination-in'; 
-        const grad = ctxLayer.createLinearGradient(0, 0, 0, 1920);
-        
-        // 顶部透明渐变
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        if (tO > 0) grad.addColorStop(tO / 1920, 'rgba(0,0,0,0)');
-        if (tO + tF > 0) grad.addColorStop((tO + tF) / 1920, 'rgba(0,0,0,1)');
-        
-        // 底部透明渐变
-        const bStart = 1920 - bO - bF;
-        const bEnd = 1920 - bO;
-        grad.addColorStop(bStart / 1920, 'rgba(0,0,0,1)');
-        grad.addColorStop(bEnd / 1920, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        
-        ctxLayer.fillStyle = grad;
-        ctxLayer.fillRect(0, 0, 1080, 1920);
-        
-        // 恢复正常画笔模式，以防影响下一帧
-        ctxLayer.globalCompositeOperation = 'source-over'; 
-    }
+    video.addEventListener('ended', () => {
+        isPlaying = false; cancelAnimationFrame(animId);
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    });
 </script>
 </body>
 </html>
