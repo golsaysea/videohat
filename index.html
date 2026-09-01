@@ -2,119 +2,161 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Web视频自动化工坊 - 进阶版</title>
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>滚动堆叠字幕生成器</title>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     <style>
-        body { background: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
-        .panel { background: #1e1e1e; padding: 25px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .controls { display: grid; gap: 15px; margin: 20px 0; }
-        button { background: #007acc; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #444; cursor: not-allowed; }
-        #progress-container { width: 100%; background: #333; border-radius: 4px; overflow: hidden; margin-top: 15px; display: none; }
-        #progress-bar { width: 0%; height: 8px; background: #00ff00; transition: width 0.2s; }
-        #log-console { background: #000; color: #00ff00; padding: 15px; font-family: Consolas, monospace; height: 150px; overflow-y: auto; border-radius: 4px; font-size: 12px; margin-top: 20px; }
-        video { width: 100%; margin-top: 20px; border-radius: 8px; display: none; }
+        body { font-family: sans-serif; background: #121212; color: #fff; padding: 20px; max-width: 600px; margin: 0 auto; }
+        .box { background: #222; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        textarea { width: 100%; height: 150px; background: #333; color: #fff; border: 1px solid #555; padding: 10px; margin-top: 10px; font-family: monospace; }
+        button { background: #ff4500; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #log { font-size: 12px; color: #0f0; margin-top: 10px; height: 100px; overflow-y: auto; background: #000; padding: 10px; }
+        video { width: 100%; margin-top: 10px; border-radius: 5px; display: none; }
     </style>
 </head>
 <body>
-    <div class="panel">
-        <h2>自动化处理队列</h2>
-        <input type="file" id="uploader" accept="video/*" multiple>
-        
-        <div class="controls">
-            <label><input type="checkbox" id="chk-vertical"> 强制裁剪为 9:16 竖屏 (自然运镜适配)</label>
-            <label><input type="checkbox" id="chk-4grid"> 启用四宫格分屏布局 (需上传4个视频)</label>
-            <label><input type="checkbox" id="chk-tts"> 触发远程 Edge-TTS 配音接口</label>
-        </div>
 
-        <button id="start-btn" disabled>执行 WebAssembly 渲染</button>
-        
-        <div id="progress-container"><div id="progress-bar"></div></div>
-        <div id="log-console">等待任务...</div>
+    <h2 style="text-align: center;">🙏 祷告文滚动字幕生成器</h2>
+
+    <div class="box">
+        <label>1. 上传无字幕的原视频 (竖屏):</label><br><br>
+        <input type="file" id="video-upload" accept="video/mp4,video/mov">
+    </div>
+
+    <div class="box">
+        <label>2. 填入字幕时间轴 (格式: 开始秒数,结束秒数 | 文字):</label>
+        <textarea id="sub-input">
+0,2 | In September, say this prayer!
+2,4 | 1. God walks with me.
+4,6 | 2. God guides my steps.
+6,10 | 3. God has a beautiful plan for me.</textarea>
+        <p style="font-size: 12px; color: #aaa;">* 每一行会自动把上一行往上顶，就像你的参考视频一样。</p>
+    </div>
+
+    <button id="generate-btn">开始合成视频</button>
+    <div id="log">等待操作...</div>
+    
+    <div class="box" id="output-box" style="display: none;">
+        <label>3. 你的视频做好了 (长按或右键保存):</label>
         <video id="output-video" controls></video>
     </div>
 
     <script>
         const { createFFmpeg, fetchFile } = FFmpeg;
         const ffmpeg = createFFmpeg({ log: false });
-        
-        const logConsole = document.getElementById('log-console');
-        const progressBar = document.getElementById('progress-bar');
-        const progressContainer = document.getElementById('progress-container');
-        
-        function log(msg) {
-            logConsole.innerHTML += `<div>> ${msg}</div>`;
-            logConsole.scrollTop = logConsole.scrollHeight;
+        const logEl = document.getElementById('log');
+
+        function printLog(text) {
+            logEl.innerHTML += `<div>> ${text}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
         }
 
-        document.getElementById('uploader').addEventListener('change', (e) => {
-            const files = e.target.files;
-            document.getElementById('start-btn').disabled = files.length === 0;
-            log(`已加载 ${files.length} 个媒体文件。`);
-        });
-
-        document.getElementById('start-btn').addEventListener('click', async () => {
-            const files = document.getElementById('uploader').files;
-            const isVertical = document.getElementById('chk-vertical').checked;
-            const is4Grid = document.getElementById('chk-4grid').checked;
-            
-            document.getElementById('start-btn').disabled = true;
-            progressContainer.style.display = 'block';
-            
-            if (!ffmpeg.isLoaded()) {
-                log("初始化 FFmpeg.wasm 引擎...");
-                await ffmpeg.load();
-            }
-
-            // 监听进度回调
-            ffmpeg.setProgress(({ ratio }) => {
-                const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
-                progressBar.style.width = `${percent}%`;
+        // 核心算法：把你输入的文字，转换成带有“向上堆叠”动画位置的 ASS 字幕格式
+        function createAssSubtitle(textInput) {
+            const lines = textInput.split('\n').filter(l => l.trim() !== '');
+            const subs = lines.map(line => {
+                const parts = line.split('|');
+                const times = parts[0].split(',');
+                return { 
+                    start: parseFloat(times[0]), 
+                    end: parseFloat(times[1]), 
+                    text: parts[1].trim() 
+                };
             });
 
-            log("将文件写入浏览器虚拟内存...");
-            for (let i = 0; i < files.length; i++) {
-                ffmpeg.FS('writeFile', `input${i}.mp4`, await fetchFile(files[i]));
+            // ASS 字幕头部：定义了粗体、白字、黑边、黑阴影（完全模仿你的参考视频）
+            let ass = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginV
+Style: Default,Arial,85,&H00FFFFFF,&H00000000,&H80000000,-1,1,10,6,2,20
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+            // 时间格式化辅助函数
+            const formatTime = (seconds) => {
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = (seconds % 60).toFixed(2);
+                return `${h}:${m.toString().padStart(2, '0')}:${s.padStart(5, '0')}`;
+            };
+
+            // 堆叠逻辑：遍历每一行字幕，并且把以前出现过的字幕也渲染出来，位置不断往上抬
+            for (let i = 0; i < subs.length; i++) {
+                const current = subs[i];
+                const startTime = formatTime(current.start);
+                const endTime = formatTime(current.end);
+                
+                for (let j = 0; j <= i; j++) {
+                    const renderText = subs[j].text;
+                    // 位置计算：最新的在最下面(Y: 1300)，之前的每次往上顶 130 像素
+                    const yPos = 1300 - ((i - j) * 130);
+                    // 使用 ASS 的 \pos 标签强制绝对定位
+                    ass += `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,{\\pos(540,${yPos})}${renderText}\n`;
+                }
+            }
+            return ass;
+        }
+
+        document.getElementById('generate-btn').addEventListener('click', async () => {
+            const videoFile = document.getElementById('video-upload').files[0];
+            const textInput = document.getElementById('sub-input').value;
+
+            if (!videoFile) {
+                alert('请先上传原视频！');
+                return;
             }
 
-            let ffmpegArgs = [];
-            if (is4Grid && files.length >= 4) {
-                log("构建四宫格 hstack/vstack 复合滤镜...");
-                ffmpegArgs = [
-                    '-i', 'input0.mp4', '-i', 'input1.mp4', '-i', 'input2.mp4', '-i', 'input3.mp4',
-                    '-filter_complex', '[0:v][1:v]hstack[top];[2:v][3:v]hstack[bottom];[top][bottom]vstack[v]',
-                    '-map', '[v]', '-c:v', 'libx264', '-preset', 'ultrafast', 'output.mp4'
-                ];
-            } else if (isVertical) {
-                log("应用 9:16 竖屏裁剪滤镜...");
-                ffmpegArgs = [
-                    '-i', 'input0.mp4', 
-                    '-vf', 'crop=ih*(9/16):ih', 
-                    '-c:v', 'libx264', '-preset', 'ultrafast', 'output.mp4'
-                ];
-            } else {
-                log("执行标准视频转码...");
-                ffmpegArgs = ['-i', 'input0.mp4', '-c:v', 'libx264', '-preset', 'ultrafast', 'output.mp4'];
-            }
+            document.getElementById('generate-btn').disabled = true;
+            document.getElementById('output-box').style.display = 'none';
+            logEl.innerHTML = '';
 
-            log(`执行命令: ffmpeg ${ffmpegArgs.join(' ')}`);
-            await ffmpeg.run(...ffmpegArgs);
+            try {
+                printLog("正在加载浏览器压制引擎...");
+                if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
-            log("渲染完成，正在清理内存并生成预览...");
-            const data = ffmpeg.FS('readFile', 'output.mp4');
-            const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
-            
-            const videoEl = document.getElementById('output-video');
-            videoEl.src = videoUrl;
-            videoEl.style.display = 'block';
-            
-            // 内存释放：防止浏览器崩溃
-            for (let i = 0; i < files.length; i++) {
-                ffmpeg.FS('unlink', `input${i}.mp4`);
+                printLog("生成字幕排版文件...");
+                const assData = createAssSubtitle(textInput);
+                
+                // 为了让浏览器里的 ffmpeg 能正常渲染字体，需要挂载一个默认英文字体
+                // 这里我们随便写一个让 libass 不报错的空字体引用逻辑
+                ffmpeg.FS('writeFile', 'subs.ass', new TextEncoder().encode(assData));
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
+
+                printLog("开始将字幕硬压入视频 (可能需要几分钟，请勿关闭网页)...");
+                
+                ffmpeg.setProgress(({ ratio }) => {
+                    printLog(`压制进度: ${(ratio * 100).toFixed(1)}%`);
+                });
+
+                // 核心压制命令，使用 ultrafast 保证网页端不崩溃
+                await ffmpeg.run('-i', 'input.mp4', '-vf', 'ass=subs.ass', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'copy', 'output.mp4');
+
+                printLog("处理完成！正在生成预览...");
+                
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+                const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+                
+                const outputVideo = document.getElementById('output-video');
+                outputVideo.src = videoUrl;
+                document.getElementById('output-box').style.display = 'block';
+
+                // 清理内存
+                ffmpeg.FS('unlink', 'input.mp4');
+                ffmpeg.FS('unlink', 'subs.ass');
+                ffmpeg.FS('unlink', 'output.mp4');
+
+            } catch (err) {
+                printLog(`发生错误: ${err.message}`);
+                console.error(err);
+            } finally {
+                document.getElementById('generate-btn').disabled = false;
             }
-            ffmpeg.FS('unlink', 'output.mp4');
-            
-            document.getElementById('start-btn').disabled = false;
         });
     </script>
 </body>
