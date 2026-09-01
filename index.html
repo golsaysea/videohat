@@ -3,18 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VideoKit Core - 满血规格引擎</title>
+    <title>VideoKit Core - 满血规格引擎 V4</title>
     <style>
         :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; --border: #30363d; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
         body { background: var(--bg); color: var(--text); padding: 20px; font-size: 12px; height: 100vh; display: flex; overflow: hidden; gap: 20px; }
         
-        /* 侧边栏 */
         .sidebar { width: 500px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .sidebar-scroll { overflow-y: auto; flex: 1; }
         .sidebar-scroll::-webkit-scrollbar { width: 6px; } .sidebar-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
         
-        /* 预览区 */
         .main-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: #000; border-radius: 8px; border: 1px solid var(--border); }
 
         .header { padding: 20px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10; border-radius: 8px 8px 0 0; }
@@ -41,7 +39,6 @@
         .btn:hover { background: #3182ce; box-shadow: 0 0 10px rgba(88, 166, 255, 0.4); }
         .btn-dark { background: #21262d; border: 1px solid var(--border); } .btn-dark:hover { background: #30363d; }
         
-        /* 画布区样式 */
         .stage-toolbar { position: absolute; top: 20px; display: flex; gap: 10px; z-index: 10; }
         .upload-wrapper { position: relative; overflow: hidden; display: inline-block; cursor: pointer; }
         .upload-wrapper input[type="file"] { position: absolute; right: 0; top: 0; opacity: 0; cursor: pointer; font-size: 100px; }
@@ -61,8 +58,8 @@
 <!-- 左侧控制台 -->
 <div class="sidebar" id="panel">
     <div class="header">
-        <h1>VideoKit Engine <span class="badge">V3 规格严格映射</span></h1>
-        <p style="color: #8b949e; font-size: 11px; margin-top: 4px;">底层坐标解耦 / 智能停靠 / Canvas 物理羽化</p>
+        <h1>VideoKit Engine <span class="badge">V4 完美防重叠版</span></h1>
+        <p style="color: #8b949e; font-size: 11px; margin-top: 4px;">加入动态羽化偏移探针 / 完美规避标题穿模</p>
     </div>
 
     <div class="sidebar-scroll">
@@ -104,7 +101,7 @@
 5. Every challenge is a stepping stone.
 6. My heart is full of peace.</textarea>
             <div class="row row-3" style="margin-top:12px;">
-                <div><label>字号 (fontsize)</label><input type="number" id="v-b-size" value="48"></div>
+                <div><label>字号 (fontsize)</label><input type="number" id="v-b-size" value="70"></div>
                 <div><label>行距 (line_spacing)</label><input type="number" id="v-b-line" value="8"></div>
                 <div><label>折行宽 (text_width)</label><input type="number" id="v-b-width" value="900"></div>
             </div>
@@ -135,6 +132,11 @@
                 <div><label>上羽化强度 (px)</label><input type="number" id="v-f-top" value="150"></div>
                 <div><label>下羽化强度 (px)</label><input type="number" id="v-f-bot" value="100"></div>
             </div>
+            <!-- 补回了规格书中隐藏的两个关键字段 -->
+            <div class="row">
+                <div><label>上手动偏移 (feather_top_offset)</label><input type="number" id="v-f-to" value="0"></div>
+                <div><label>下手动偏移 (feather_bottom_offset)</label><input type="number" id="v-f-bo" value="0"></div>
+            </div>
             <div style="border-top: 1px dashed #30363d; padding-top: 12px; margin-top: 4px;">
                 <label class="chk-group"><input type="checkbox" id="v-bg-on" checked> 开启卡片背景 (bg_enabled)</label>
                 <div class="row row-3">
@@ -152,7 +154,6 @@
     </div>
 </div>
 
-<!-- 右侧画板 -->
 <div class="main-stage">
     <div class="stage-toolbar">
         <div class="upload-wrapper btn btn-dark">
@@ -160,11 +161,12 @@
             <input type="file" id="video-file" accept="video/*">
         </div>
         <button class="btn btn-dark" id="btn-play">▶️ 播放 / 暂停 (WYSIWYG)</button>
+        <!-- 引入 ffmpeg 核心，仅需原样保留 -->
+        <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
         <button class="btn" id="btn-record">🔴 直录导出带原声 MP4</button>
     </div>
 
     <div class="canvas-container">
-        <!-- 强制物理宽高，绝不因设备像素比失真 -->
         <canvas id="main-canvas" width="1080" height="1920"></canvas>
         <div class="prog-bar-container" id="timeline"><div id="prog-bar"></div></div>
     </div>
@@ -174,14 +176,8 @@
 </div>
 
 <script>
-    // =======================================================
-    // VideoKit Canvas 渲染引擎 (严格依据移植说明书公式)
-    // =======================================================
-
     const canvas = document.getElementById('main-canvas');
     const ctx = canvas.getContext('2d');
-    
-    // 临时画布：专门用于文档中“通过临时 Canvas + 渐变透明遮罩实现羽化”
     const tmpCanvas = document.createElement('canvas');
     const tc = tmpCanvas.getContext('2d');
     
@@ -189,12 +185,10 @@
     let isPlaying = false, animId, mediaRecorder, chunks = [];
     let audioCtx, sourceNode, destNode;
 
-    // --- 探针封装 ---
     const v = id => document.getElementById(id).value;
     const n = id => Number(v(id)) || 0;
     const c = id => document.getElementById(id).checked;
 
-    // --- 自动折行算法 (wrapText) ---
     function wrapText(context, text, maxWidth) {
         const lines = [];
         for (const paragraph of text.split('\n')) {
@@ -210,7 +204,6 @@
         return lines;
     }
 
-    // --- 圆角背景算法 ---
     function drawRoundRect(context, x, y, w, h, r) {
         context.beginPath(); context.moveTo(x + r, y); context.lineTo(x + w - r, y);
         context.quadraticCurveTo(x + w, y, x + w, y + r); context.lineTo(x + w, y + h - r);
@@ -219,7 +212,6 @@
         context.quadraticCurveTo(x, y, x + r, y); context.closePath();
     }
 
-    // --- 构建 Overlay 对象 (映射规格字典) ---
     function getOv() {
         return {
             x: n('v-x'), y: n('v-y'), w: n('v-w'), h: n('v-h'),
@@ -236,6 +228,7 @@
             scroll_static: c('v-static'), scroll_auto_stop: c('v-auto-stop'), scroll_auto_stop_lead: n('v-lead'),
             
             feather_top: n('v-f-top'), feather_bottom: n('v-f-bot'),
+            feather_top_offset: n('v-f-to'), feather_bottom_offset: n('v-f-bo'),
             
             bg_enabled: c('v-bg-on'), bg_color: v('v-bg-color'), bg_opacity: n('v-bg-opa'), bg_radius: n('v-bg-rad'),
             bg_pt: n('v-bg-pt'), bg_pb: n('v-bg-pb'), bg_px: n('v-bg-px'),
@@ -245,10 +238,9 @@
     }
 
     // =========================================================
-    // 渲染心脏：drawScrollOverlay (1:1 翻译移植说明书公式)
+    // 渲染心脏：彻底修复标题遮挡问题的 V4 版本
     // =========================================================
     function drawScrollOverlay(ov, currentTime) {
-        // [底层视频，自适应居中]
         ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, 1080, 1920);
         if (video.videoWidth) {
             const scale = Math.max(1080 / video.videoWidth, 1920 / video.videoHeight);
@@ -256,12 +248,10 @@
             ctx.drawImage(video, (1080 - w) / 2, (1920 - h) / 2, w, h);
         }
 
-        // [公式 1：视窗坐标与整体偏移解耦]
         const offsetX = ov.scroll_offset_x, offsetY = ov.scroll_offset_y;
         const clipX = ov.x + offsetX, clipY = ov.y + offsetY;
         const clipW = ov.w, clipH = ov.h;
 
-        // [公式 2：卡片背景绘制]
         if (ov.bg_enabled) {
             ctx.save();
             ctx.globalAlpha = ov.bg_opacity / 255;
@@ -271,65 +261,70 @@
             ctx.restore();
         }
 
-        // [公式 3：排版计算准备]
-        tmpCanvas.width = clipW; tmpCanvas.height = clipH; // 仅需要裁切区大小的离屏画布以提升性能
+        tmpCanvas.width = clipW; tmpCanvas.height = clipH;
         tc.clearRect(0, 0, clipW, clipH);
         
-        const lineHeight = ov.fontsize * 1.3 + ov.line_spacing;
-        tc.font = `bold ${ov.fontsize}px Arial, sans-serif`;
-        const lines = wrapText(tc, ov.content, ov.text_width || clipW);
-
+        // 核心修正 1：提前计算固定标题高度，作为强制偏移量 (Auto Title Offset)
         let titleBlockH = 0, titleLines = [];
         if (ov.scroll_title) {
             tc.font = `900 ${ov.scroll_title_fontsize}px Arial, sans-serif`;
             titleLines = wrapText(tc, ov.scroll_title, clipW);
-            if (!ov.scroll_title_independent) titleBlockH = titleLines.length * (ov.scroll_title_fontsize * 1.2) + ov.scroll_title_gap;
+            if (!ov.scroll_title_independent) {
+                titleBlockH = titleLines.length * (ov.scroll_title_fontsize * 1.2) + ov.scroll_title_gap;
+            }
         }
 
-        // [公式 4：运动方程与 Auto Stop 智能停靠]
+        const autoTitleOffset = (ov.scroll_title && ov.scroll_title_fixed && !ov.scroll_title_independent) ? titleBlockH : 0;
+        
+        // 羽化实际生效的偏移区 = 用户手动偏移 + 自动避让标题的高度
+        const tOff = ov.feather_top_offset + autoTitleOffset;
+        const bOff = ov.feather_bottom_offset;
+
+        const lineHeight = ov.fontsize * 1.3 + ov.line_spacing;
+        tc.font = `bold ${ov.fontsize}px Arial, sans-serif`;
+        const lines = wrapText(tc, ov.content, ov.text_width || clipW);
+
         const duration = Math.max(0.1, ov.end - ov.start);
         const progress = Math.max(0, Math.min(1, currentTime / Math.max(0.1, duration - ov.scroll_auto_stop_lead)));
         
         const fromX = ov.scroll_from_x + offsetX;
-        const toX = fromX; // 规范中 scroll_to_x 默认等于 scroll_from_x
         const fromY = ov.scroll_from_y + offsetY;
         let effectiveToY = ov.scroll_to_y + offsetY;
 
+        // 核心修正 2：Auto Stop 时，严格扣除上下的羽化区和偏移区
+        const visibleBodyH = clipH - ov.feather_top - ov.feather_bottom - tOff - bOff;
         if (ov.scroll_auto_stop) {
             const totalTextH = lines.length * lineHeight;
-            const visibleBodyH = clipH - ov.feather_top - ov.feather_bottom - (ov.scroll_title_fixed ? titleBlockH : 0);
             if (fromY > effectiveToY) {
-                if (totalTextH <= visibleBodyH) effectiveToY = clipY + ov.feather_top + (ov.scroll_title_fixed ? titleBlockH : 0);
-                else effectiveToY = clipY + clipH - ov.feather_bottom - totalTextH;
+                if (totalTextH <= visibleBodyH) {
+                    effectiveToY = clipY + tOff + ov.feather_top;
+                } else {
+                    effectiveToY = clipY + clipH - bOff - ov.feather_bottom - totalTextH;
+                }
             }
         }
 
-        // X轴/Y轴绝对坐标
         const textX = fromX;
-        const textY = ov.scroll_static ? 
-                      clipY + ov.feather_top + (ov.scroll_title_fixed ? titleBlockH : 0) : 
-                      fromY + (effectiveToY - fromY) * progress;
+        const textY = ov.scroll_static ? clipY + tOff + ov.feather_top : fromY + (effectiveToY - fromY) * progress;
 
-        // [离屏绘制] ============================
+        // --- 绘制离屏滚动正文 ---
         tc.save();
-        tc.translate(-clipX, -clipY); // 将相对坐标系映射至全局
-
-        // 画正文
+        tc.translate(-clipX, -clipY);
+        let curY = textY + (ov.scroll_title && !ov.scroll_title_fixed ? titleBlockH : 0);
+        
         tc.font = `bold ${ov.fontsize}px Arial, sans-serif`;
         tc.textAlign = 'center'; tc.textBaseline = 'top';
         tc.fillStyle = ov.color;
-        
         if (ov.shadow_enabled) { tc.shadowColor = 'rgba(0,0,0,0.8)'; tc.shadowBlur = 6; tc.shadowOffsetY = 3; } 
         else { tc.shadowColor = 'transparent'; }
 
-        let curY = textY + (ov.scroll_title && !ov.scroll_title_fixed ? titleBlockH : 0);
         for (const line of lines) {
             if (ov.use_stroke) { tc.lineWidth = 4; tc.strokeStyle = '#000'; tc.strokeText(line, textX, curY); }
             tc.fillText(line, textX, curY);
             curY += lineHeight;
         }
 
-        // 画随动标题 (如果不固定，则跟正文一起滚动并被羽化)
+        // 画不固定的标题（跟随正文滚动）
         if (ov.scroll_title && ov.scroll_title_fixed === false) {
             tc.font = `900 ${ov.scroll_title_fontsize}px Arial, sans-serif`;
             if (ov.scroll_title_shadow_enabled) { tc.shadowColor = 'rgba(0,0,0,0.9)'; tc.shadowBlur = 8; tc.shadowOffsetY = 4; }
@@ -342,32 +337,42 @@
         }
         tc.restore();
 
-        // [公式 5：羽化 destination-in 遮罩]
-        if (ov.feather_top > 0 || ov.feather_bottom > 0) {
+        // 核心修正 3：使用带四级极值钳制的公式绘制羽化遮罩，绝不会负数报错
+        if (ov.feather_top > 0 || ov.feather_bottom > 0 || tOff > 0 || bOff > 0) {
             tc.globalCompositeOperation = 'destination-in';
             const gradY = tc.createLinearGradient(0, 0, 0, clipH);
+            
+            let s1 = Math.max(0, Math.min(1, tOff / clipH));
+            let s2 = Math.max(s1, Math.min(1, (tOff + ov.feather_top) / clipH));
+            let s4 = Math.max(0, Math.min(1, 1 - bOff / clipH));
+            let s3 = Math.min(s4, Math.max(s2, 1 - (bOff + ov.feather_bottom) / clipH));
+
             gradY.addColorStop(0, 'rgba(0,0,0,0)');
-            if (ov.feather_top > 0) gradY.addColorStop(Math.min(1, ov.feather_top / clipH), 'rgba(0,0,0,1)');
-            if (ov.feather_bottom > 0) gradY.addColorStop(Math.max(0, 1 - ov.feather_bottom / clipH), 'rgba(0,0,0,1)');
-            gradY.addColorStop(1, 'rgba(0,0,0,0)');
+            if (s1 > 0) gradY.addColorStop(s1, 'rgba(0,0,0,0)');
+            if (s2 > s1) gradY.addColorStop(s2, 'rgba(0,0,0,1)');
+            if (s3 > s2) gradY.addColorStop(s3, 'rgba(0,0,0,1)');
+            if (s4 > s3) gradY.addColorStop(s4, 'rgba(0,0,0,0)');
+            if (s4 < 1) gradY.addColorStop(1, 'rgba(0,0,0,0)');
+            
             tc.fillStyle = gradY; tc.fillRect(0, 0, clipW, clipH);
             tc.globalCompositeOperation = 'source-over';
         }
 
-        // [公式 6：裁切主画面并合并离屏画布]
         ctx.save();
         ctx.beginPath(); ctx.rect(clipX, clipY, clipW, clipH); ctx.clip();
         ctx.drawImage(tmpCanvas, clipX, clipY);
         ctx.restore();
 
-        // [公式 7：画固定不受羽化影响的顶层标题]
+        // --- 顶层绘制绝对固定标题，无视任何羽化遮罩 ---
         if (ov.scroll_title && ov.scroll_title_fixed !== false) {
             ctx.save();
             ctx.font = `900 ${ov.scroll_title_fontsize}px Arial, sans-serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'top';
             if (ov.scroll_title_shadow_enabled) { ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4; }
             ctx.fillStyle = ov.scroll_title_color;
-            let fixedY = clipY + (ov.scroll_title_independent ? 0 : ov.feather_top);
+            
+            // 标题只受独立状态和用户手动偏移影响，不受自身高度挤压
+            let fixedY = clipY + (ov.scroll_title_independent ? 0 : ov.feather_top_offset); 
             for (let tl of titleLines) {
                 ctx.lineWidth = 4; ctx.strokeStyle = '#000'; ctx.strokeText(tl, textX, fixedY);
                 ctx.fillText(tl, textX, fixedY); fixedY += ov.scroll_title_fontsize * 1.2;
@@ -377,7 +382,7 @@
     }
 
     // ==========================================
-    // 界面交互与音画原声直录系统
+    // 界面交互与原声直录系统
     // ==========================================
     document.getElementById('video-file').addEventListener('change', e => {
         if(e.target.files[0]) {
@@ -405,7 +410,6 @@
     }
     function renderLoop() { if (!isPlaying) return; renderFrame(); animId = requestAnimationFrame(renderLoop); }
 
-    // 导出录制
     document.getElementById('btn-record').addEventListener('click', () => {
         if (!video.src) return alert("请先载入视频！");
         video.pause(); video.currentTime = 0; isPlaying = false; cancelAnimationFrame(animId);
