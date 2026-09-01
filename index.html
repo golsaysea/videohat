@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态滚动字幕压制工具 (纯浏览器端)</title>
+    <!-- 引入 FFmpeg.wasm (v0.11 单线程版，避免 GitHub Pages 的跨域隔离限制) -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f5f5f5;}
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        textarea, input { width: 100%; margin-top: 8px; padding: 10px; box-sizing: border-box; }
+        textarea { height: 150px; font-family: monospace; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px;}
+        button:disabled { background: #ccc; }
+        #log { background: #222; color: #0f0; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; height: 150px; overflow-y: auto; white-space: pre-wrap; }
+        video { width: 100%; margin-top: 10px; border-radius: 8px; background: #000; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>1. 上传视频 (推荐 9:16 竖屏)</h2>
+        <input type="file" id="videoInput" accept="video/mp4,video/x-m4v,video/*">
+    </div>
+
+    <div class="card">
+        <h2>2. 输入字幕与时间轴</h2>
+        <p style="font-size: 14px; color: #666;">格式：开始时间,结束时间 | 字幕内容。例如：<br>00:00:01.00,00:00:03.00 | 1. God walks with me.<br>00:00:03.00,00:00:05.00 | 2. God guides my steps.</p>
+        <textarea id="subInput">00:00:00.50,00:00:02.50 | In September, say this prayer!
+00:00:02.50,00:00:04.50 | 1. God walks with me.
+00:00:04.50,00:00:06.50 | 2. God guides my steps.
+00:00:06.50,00:00:09.00 | 3. God has a beautiful plan for me.</textarea>
+    </div>
+
+    <div class="card">
+        <button id="processBtn">开始生成字幕并压制视频</button>
+        <div id="status" style="margin-top: 10px; font-weight: bold;"></div>
+        <div id="log"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. 结果预览与下载</h2>
+        <video id="outputVideo" controls></video>
+        <br>
+        <a id="downloadLink" style="display:none; text-decoration: none;">
+            <button style="background: #28a745;">下载视频</button>
+        </a>
+    </div>
+
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        // 核心日志开启
+        const ffmpeg = createFFmpeg({ log: true });
+        
+        const processBtn = document.getElementById('processBtn');
+        const videoInput = document.getElementById('videoInput');
+        const subInput = document.getElementById('subInput');
+        const logEl = document.getElementById('log');
+        const statusEl = document.getElementById('status');
+        const outputVideo = document.getElementById('outputVideo');
+        const downloadLink = document.getElementById('downloadLink');
+
+        // 劫持 FFmpeg 日志输出到网页
+        ffmpeg.setLogger(({ type, message }) => {
+            logEl.textContent += message + '\n';
+            logEl.scrollTop = logEl.scrollHeight;
+        });
+
+        // 生成堆叠滚动效果的 ASS 字幕字符串
+        function generateASS(textInput) {
+            // 解析用户输入
+            const lines = textInput.split('\n').filter(l => l.trim().length > 0);
+            const subs = lines.map(line => {
+                const parts = line.split('|');
+                const times = parts[0].split(',');
+                return {
+                    start: times[0].trim(),
+                    end: times[1].trim(),
+                    text: parts[1].trim()
+                };
+            });
+
+            // ASS 文件头部配置：定义了经典的粗体、描边、阴影特效
+            let assContent = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 1
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,90,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,8,5,2,20,20,500,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+            // 核心排版算法：遍历每句话。当播到第 N 句时，要显示 1 到 N 句，并且越早的句子位置越高。
+            for (let i = 0; i < subs.length; i++) {
+                const currentSub = subs[i];
+                const startTime = currentSub.start;
+                const endTime = currentSub.end;
+                
+                // 在当前这句话的时间段内，渲染它以及它之前出现过的所有句子
+                for (let j = 0; j <= i; j++) {
+                    const renderText = subs[j].text;
+                    // 计算 Y 轴偏移量。最近的一句在最下面，之前的句子依次向上抬升（每句间隔 120 像素）
+                    const offsetIndex = i - j; 
+                    const yPos = 1200 - (offsetIndex * 120); // 1200 是基础 Y 坐标 (1080x1920中心偏下)
+                    
+                    // 生成单条 ASS 事件，使用 {\pos(x,y)} 强制定位
+                    assContent += `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,{\\pos(540,${yPos})}${renderText}\n`;
+                }
+            }
+            return assContent;
+        }
+
+        processBtn.addEventListener('click', async () => {
+            if (!videoInput.files[0]) {
+                alert("请先上传视频！");
+                return;
+            }
+
+            processBtn.disabled = true;
+            logEl.textContent = '';
+            outputVideo.src = '';
+            downloadLink.style.display = 'none';
+
+            try {
+                if (!ffmpeg.isLoaded()) {
+                    statusEl.innerText = "加载 FFmpeg 核心引擎中 (首次加载需下载约20MB数据)...";
+                    await ffmpeg.load();
+                }
+
+                statusEl.innerText = "生成动态字幕文件中...";
+                const assData = generateASS(subInput.value);
+                // 写入字幕文件到虚拟文件系统
+                ffmpeg.FS('writeFile', 'subs.ass', new TextEncoder().encode(assData));
+
+                const videoFile = videoInput.files[0];
+                statusEl.innerText = "读取视频文件中...";
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
+
+                statusEl.innerText = "正在硬压制视频 (纯本地运算，根据视频长度可能需要几分钟)...";
+                // 核心压制命令，使用 libass 渲染字幕
+                await ffmpeg.run('-i', 'input.mp4', '-vf', 'ass=subs.ass', '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', 'output.mp4');
+
+                statusEl.innerText = "处理完成！";
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+                
+                // 生成可供预览和下载的 Blob URL
+                const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
+                const videoUrl = URL.createObjectURL(videoBlob);
+                
+                outputVideo.src = videoUrl;
+                downloadLink.href = videoUrl;
+                downloadLink.download = 'subtitled_output.mp4';
+                downloadLink.style.display = 'inline';
+
+                // 清理内存
+                ffmpeg.FS('unlink', 'input.mp4');
+                ffmpeg.FS('unlink', 'subs.ass');
+                ffmpeg.FS('unlink', 'output.mp4');
+
+            } catch (err) {
+                console.error(err);
+                statusEl.innerText = "发生错误: " + err.message;
+            } finally {
+                processBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
