@@ -107,6 +107,8 @@ import { defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from
 import BulkModal from './components/BulkModal.vue';
 import { useBulkStore } from './stores/bulkStore';
 import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRenderer';
+import { ReelsOverlay } from './utils/reels-overlay.js';
+import './utils/WebAssetPool.js';
 
 const SliderControl = defineComponent({
   props: {
@@ -191,7 +193,24 @@ const drawPreview = () => {
   }
   ctx.restore();
 
-  drawScrollOverlay(ctx, overlayState, previewTime.value, canvas.width, canvas.height);
+  const nativeOverlay = {
+    ...JSON.parse(JSON.stringify(overlayState)),
+    text_align: overlayState.align || overlayState.text_align || 'center',
+    bg_opacity: overlayState.bg_opacity <= 1 ? Math.round(overlayState.bg_opacity * 255) : overlayState.bg_opacity,
+    bg_padding_top: overlayState.bg_padding_top ?? overlayState.bg_pt ?? 46,
+    bg_padding_bottom: overlayState.bg_padding_bottom ?? overlayState.bg_pb ?? 46,
+    bg_padding_left: overlayState.bg_padding_left ?? overlayState.bg_px ?? 22,
+    bg_padding_right: overlayState.bg_padding_right ?? overlayState.bg_px ?? 22,
+    scroll_title_shadow_enabled: overlayState.scroll_title_shadow_enabled ?? true,
+    end: 15,
+  };
+
+  try {
+    ReelsOverlay.drawOverlay(ctx, nativeOverlay, previewTime.value, canvas.width, canvas.height);
+  } catch (error) {
+    console.warn('[ReelsOverlay] Falling back to lightweight scroll renderer:', error);
+    drawScrollOverlay(ctx, overlayState, previewTime.value, canvas.width, canvas.height);
+  }
 };
 
 const renderLoop = (timestamp) => {

@@ -30,3 +30,5 @@ export const WebAssetPool = {
     return path.replace(/\\/g, '/').split('/').pop();
   },
 };
+
+if (typeof window !== 'undefined') window.WebAssetPool = WebAssetPool;
