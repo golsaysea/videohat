@@ -99,6 +99,7 @@
             <NumberField v-if="exportOptions.durationMode === 'custom'" v-model="exportOptions.customDuration" label="自定义秒数" :min="1" />
             <SelectField v-model="exportOptions.fitMode" label="视频匹配" :options="fitModeOptions" />
             <SelectField v-model="exportOptions.quality" label="导出画质" :options="qualityOptions" />
+            <SelectField v-model="exportOptions.format" label="导出格式" :options="formatOptions" />
             <NumberField v-model="exportOptions.fps" label="帧率" :min="15" :max="60" />
           </Panel>
 
@@ -222,6 +223,7 @@ import { useBulkStore } from './stores/bulkStore';
 import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRenderer';
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
+import { transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
 
@@ -413,6 +415,7 @@ const exportOptions = reactive({
   customDuration: 15,
   fitMode: 'cover',
   quality: 'high',
+  format: 'mp4',
   fps: 30,
 });
 
@@ -433,6 +436,10 @@ const qualityOptions = [
   { value: 'high', label: '高画质 8 Mbps' },
   { value: 'medium', label: '中画质 5 Mbps' },
   { value: 'low', label: '快速 2.5 Mbps' },
+];
+const formatOptions = [
+  { value: 'mp4', label: 'MP4：发帖兼容' },
+  { value: 'webm', label: 'WebM：快速导出' },
 ];
 const alignOptions = [
   { value: 'center', label: '居中对齐' },
@@ -820,14 +827,34 @@ const exportCurrentTask = async () => {
   mediaRecorder.ondataavailable = (event) => {
     if (event.data.size) chunks.push(event.data);
   };
-  mediaRecorder.onstop = () => {
+  mediaRecorder.onstop = async () => {
     exportStatus.value = '生成文件';
     stream.getTracks().forEach((track) => track.stop());
     const type = mimeType || 'video/webm';
-    const blob = new Blob(chunks, { type });
-    const url = URL.createObjectURL(blob);
+    const recordedBlob = new Blob(chunks, { type });
+    let outputBlob = recordedBlob;
+    let ext = 'webm';
+
+    if (exportOptions.format === 'mp4') {
+      try {
+        exportStatus.value = '转码 MP4';
+        outputBlob = await transcodeWebmToMp4(recordedBlob, {
+          fps: exportOptions.fps || 30,
+          quality: exportOptions.quality,
+          onProgress: (progress, status) => {
+            exportProgress.value = Math.min(0.99, 0.85 + progress * 0.14);
+            exportStatus.value = status;
+          },
+        });
+        ext = 'mp4';
+      } catch (error) {
+        console.error(error);
+        window.alert('MP4 转码失败，已自动保留 WebM 文件。大素材可能需要更长时间或更多内存。');
+      }
+    }
+
+    const url = URL.createObjectURL(outputBlob);
     exportedUrl.value = url;
-    const ext = type.includes('mp4') ? 'mp4' : 'webm';
     triggerDownload(url, `${tasks.value[selectedTaskIndex.value]?.baseName || 'reels'}_${Date.now()}.${ext}`);
     exportProgress.value = 1;
     exportStatus.value = `已导出 ${ext.toUpperCase()}`;
@@ -844,7 +871,8 @@ const exportCurrentTask = async () => {
     if (!isExporting.value) return;
     const elapsed = (performance.now() - startedAt) / 1000;
     previewTime.value = Math.min(elapsed, duration);
-    exportProgress.value = Math.min(0.99, previewTime.value / duration);
+    const recordProgressMax = exportOptions.format === 'mp4' ? 0.85 : 0.99;
+    exportProgress.value = Math.min(recordProgressMax, (previewTime.value / duration) * recordProgressMax);
     exportStatus.value = `导出 ${formatDuration(previewTime.value)} / ${formatDuration(duration)}`;
     if (videoEl.value && media.videoUrl && media.videoDuration && videoEl.value.ended) {
       videoEl.value.currentTime = elapsed % media.videoDuration;
