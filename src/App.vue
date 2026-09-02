@@ -462,6 +462,12 @@ const exportOptions = reactive({
 });
 
 const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '' }]);
+const cloudOwnerId = ref(localStorage.getItem('videohat_owner_id') || 'local-user');
+const cloudStatus = ref('云端未同步');
+const cloudBusy = ref(false);
+const cloudProjects = ref([]);
+const selectedCloudProjectId = ref('');
+const currentCloudProjectId = ref('');
 const operationLog = ref([]);
 let parameterLogTimer = 0;
 
@@ -894,9 +900,8 @@ const exportCurrentTask = async () => {
   exportStatus.value = '准备素材';
   isExporting.value = true;
   wasExporting = true;
-  recordLocalOperation('开始导出', { format: exportOptions.format, duration });
-
   const duration = activeDuration.value;
+  recordLocalOperation('开始导出', { format: exportOptions.format, duration });
   const useSeparateAudio = Boolean(media.audioUrl);
   const useVideoAudio = !useSeparateAudio && Boolean(media.videoUrl);
   if (useSeparateAudio || useVideoAudio) await ensureAudioGraph(useSeparateAudio);
