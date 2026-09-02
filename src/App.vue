@@ -667,8 +667,8 @@ const fitModeOptions = [
 const engineOptions = [
   { value: 'local-fast', label: '本地极速预览导出' },
   { value: 'precise', label: '精确合成（浏览器）' },
-  { value: 'pipeline', label: '流水线导出（后端）' },
-  { value: 'hardware', label: '硬件 H.264（后端）' },
+  { value: 'pipeline', label: '流水线导出（后端优先）' },
+  { value: 'hardware', label: '硬件 H.264（后端优先）' },
 ];
 const qualityOptions = [
   { value: 'ultrafast', label: '极速 2 Mbps' },
@@ -1334,7 +1334,6 @@ const supportedMime = () => {
 };
 
 const browserUnsupportedFormats = new Set(['backend-mp4', 'png-layers', 'fcpxml']);
-const backendOnlyEngines = new Set(['pipeline', 'hardware']);
 const bitrateForQuality = () => {
   if (exportOptions.quality === 'custom') return Math.max(1, Number(exportOptions.customBitrate) || 5) * 1000000;
   return ({ high: 8000000, medium: 5000000, low: 2500000, ultrafast: 2000000 }[exportOptions.quality] || 5000000);
@@ -1342,7 +1341,6 @@ const bitrateForQuality = () => {
 
 const needsBackendExporter = () => (
   browserUnsupportedFormats.has(exportOptions.format)
-  || backendOnlyEngines.has(exportOptions.engine)
   || exportOptions.resolution !== '1080x1920'
 );
 
@@ -1402,7 +1400,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   }
   if (needsBackendExporter()) {
     exportStatus.value = '等待后端导出服务';
-    window.alert('这个导出模式需要后端 FFmpeg/GPU 服务。当前浏览器本地请先选：渲染引擎=本地极速预览导出，导出格式=WebM：本地最快，分辨率=Reels 1080 x 1920。');
+    window.alert('这个导出格式或分辨率需要后端 FFmpeg/GPU 服务。当前浏览器本地可导出：WebM 或浏览器慢转 MP4，分辨率=Reels 1080 x 1920；高画质 8 Mbps 可以本地导出。');
     return;
   }
   if (confirmMp4 && exportOptions.format === 'mp4' && !window.confirm('浏览器 MP4 会先录 WebM 再用 ffmpeg.wasm 转码，可能要等几分钟。要继续吗？\n\n想最快出片请改选 WebM：本地最快。')) {
