@@ -60,6 +60,24 @@
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
           <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">本地素材文件夹缓存</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="localMediaBusy" @click="restoreLocalMediaFolder">恢复</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy" @click="selectLocalMediaFolder">选择素材文件夹</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy || !localMediaItems.length" @click="scanLocalMediaDirectory">刷新列表</button>
+          </div>
+          <p class="text-xs leading-relaxed text-gray-500">{{ localMediaStatus }}</p>
+          <div v-if="localMediaItems.length" class="max-h-40 space-y-2 overflow-y-auto">
+            <div v-for="item in localMediaItems" :key="item.name" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
+              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
+              <div class="mt-1 text-[11px] text-gray-500">{{ item.cacheName ? `缓存：${item.cacheName}` : '未生成旁路 MP4 缓存' }}</div>
+              <button class="mt-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100 hover:bg-cyan-500/20" :disabled="localMediaBusy" @click="useLocalMediaForCurrent(item)">用于当前任务</button>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
             <h3 class="m-0 text-sm font-bold text-cyan-300">Google Drive 媒体池</h3>
             <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="driveBusy" @click="connectGoogleDrive">连接</button>
           </div>
@@ -523,6 +541,9 @@ const exportProgress = ref(0);
 const exportStatus = ref('准备导出');
 const mediaError = ref('');
 const driveToken = ref('');
+const localMediaBusy = ref(false);
+const localMediaStatus = ref('选择素材文件夹后，转换 MP4 会自动写在原文件旁边。');
+const localMediaItems = ref([]);
 const driveBusy = ref(false);
 const driveStatus = ref(isGoogleDriveConfigured() ? 'Google Drive 未连接' : '未配置 Google Drive 环境变量');
 const mediaPool = ref([]);
@@ -793,6 +814,7 @@ const formatDuration = (value) => {
 const AUTO_TRANSCODE_WARN_BYTES = 80 * 1024 * 1024;
 const AUTO_TRANSCODE_LIMIT_BYTES = 220 * 1024 * 1024;
 const LOCAL_PROJECT_DRAFT_KEY = 'videohat_reels_local_project_v1';
+const LOCAL_MEDIA_DIR_HANDLE_KEY = 'videohat_local_media_dir_handle_v1';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '未知大小';
@@ -822,6 +844,148 @@ const updateMediaProgress = (progress, status, fileName = '') => {
   const pct = `${Math.round(clamped * 100)}%`;
   const eta = mediaEta.value ? ` · ${mediaEta.value}` : '';
   mediaError.value = `${status} ${pct}${eta}${fileName ? `：${fileName}` : ''}`;
+};
+
+let localMediaDirectoryHandle = null;
+const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm', '.quicktime']);
+const audioExtensions = new Set(['.mp3', '.m4a', '.wav', '.aac', '.ogg']);
+const cacheSuffix = '.videohat-preview.mp4';
+
+const fileExtension = (name) => {
+  const index = String(name || '').lastIndexOf('.');
+  return index >= 0 ? String(name).slice(index).toLowerCase() : '';
+};
+
+const cacheNameFor = (name) => String(name || 'video').replace(/\.[^.]+$/, '') + cacheSuffix;
+
+const isPreviewCacheName = (name) => String(name || '').endsWith(cacheSuffix);
+
+const ensureLocalFolderPermission = async (mode = 'readwrite') => {
+  if (!localMediaDirectoryHandle) throw new Error('请先选择素材文件夹');
+  const options = { mode };
+  if ((await localMediaDirectoryHandle.queryPermission(options)) === 'granted') return true;
+  return (await localMediaDirectoryHandle.requestPermission(options)) === 'granted';
+};
+
+const hasFileInLocalFolder = async (name) => {
+  if (!localMediaDirectoryHandle) return false;
+  try {
+    await localMediaDirectoryHandle.getFileHandle(name);
+    return true;
+  } catch (_) {
+    return false;
+  }
+};
+
+const scanLocalMediaDirectory = async () => {
+  localMediaBusy.value = true;
+  try {
+    if (!(await ensureLocalFolderPermission('readwrite'))) throw new Error('没有文件夹读写授权');
+    const items = [];
+    for await (const [name, handle] of localMediaDirectoryHandle.entries()) {
+      if (handle.kind !== 'file' || isPreviewCacheName(name)) continue;
+      const ext = fileExtension(name);
+      const kind = videoExtensions.has(ext) ? 'video' : (audioExtensions.has(ext) ? 'audio' : '');
+      if (!kind) continue;
+      const cacheName = kind === 'video' ? cacheNameFor(name) : '';
+      items.push({
+        provider: 'local-folder',
+        kind,
+        name,
+        cacheName: kind === 'video' && await hasFileInLocalFolder(cacheName) ? cacheName : '',
+      });
+    }
+    localMediaItems.value = items.sort((a, b) => a.name.localeCompare(b.name));
+    localMediaStatus.value = `已读取 ${items.length} 个本地素材；视频会优先使用旁边的已转换 MP4。`;
+  } catch (error) {
+    console.error(error);
+    localMediaStatus.value = `本地素材文件夹读取失败：${error.message}`;
+  } finally {
+    localMediaBusy.value = false;
+  }
+};
+
+const selectLocalMediaFolder = async () => {
+  if (!window.showDirectoryPicker) {
+    localMediaStatus.value = '当前浏览器不支持文件夹读写授权，请使用 Chrome 或 Edge。';
+    return;
+  }
+  localMediaBusy.value = true;
+  try {
+    localMediaDirectoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await localforage.setItem(LOCAL_MEDIA_DIR_HANDLE_KEY, localMediaDirectoryHandle);
+    await scanLocalMediaDirectory();
+  } catch (error) {
+    if (error?.name !== 'AbortError') localMediaStatus.value = `选择素材文件夹失败：${error.message}`;
+  } finally {
+    localMediaBusy.value = false;
+  }
+};
+
+const restoreLocalMediaFolder = async () => {
+  localMediaBusy.value = true;
+  try {
+    localMediaDirectoryHandle = await localforage.getItem(LOCAL_MEDIA_DIR_HANDLE_KEY);
+    if (!localMediaDirectoryHandle) {
+      localMediaStatus.value = '还没有保存过素材文件夹授权，请先选择素材文件夹。';
+      return;
+    }
+    await scanLocalMediaDirectory();
+  } catch (error) {
+    console.error(error);
+    localMediaStatus.value = `恢复素材文件夹失败：${error.message}`;
+  } finally {
+    localMediaBusy.value = false;
+  }
+};
+
+const writeConvertedCache = async (sourceName, convertedFile) => {
+  if (!localMediaDirectoryHandle || !sourceName || !convertedFile) return '';
+  if (!(await ensureLocalFolderPermission('readwrite'))) return '';
+  const cacheName = cacheNameFor(sourceName);
+  const handle = await localMediaDirectoryHandle.getFileHandle(cacheName, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(convertedFile);
+  await writable.close();
+  return cacheName;
+};
+
+const useLocalMediaForCurrent = async (item) => {
+  if (!localMediaDirectoryHandle) return;
+  localMediaBusy.value = true;
+  try {
+    if (!(await ensureLocalFolderPermission('readwrite'))) throw new Error('没有文件夹读写授权');
+    let fileName = item.name;
+    let displayName = item.name;
+    if (item.kind === 'video') {
+      const cacheName = item.cacheName || cacheNameFor(item.name);
+      if (await hasFileInLocalFolder(cacheName)) {
+        fileName = cacheName;
+        displayName = `${item.name} -> 已转换 MP4`;
+      }
+    }
+    const fileHandle = await localMediaDirectoryHandle.getFileHandle(fileName);
+    const file = await fileHandle.getFile();
+    await processMediaFile(file, item.kind, {
+      displayName,
+      convertedDisplayName: `${item.name} -> 已转换 MP4`,
+      onConverted: async (converted) => {
+        if (item.kind !== 'video') return;
+        const cacheName = await writeConvertedCache(item.name, converted);
+        if (cacheName) {
+          item.cacheName = cacheName;
+          localMediaStatus.value = `已写入旁路 MP4 缓存：${cacheName}`;
+          await scanLocalMediaDirectory();
+        }
+      },
+    });
+    localMediaStatus.value = `已用于当前任务：${displayName}`;
+  } catch (error) {
+    console.error(error);
+    localMediaStatus.value = `读取本地素材失败：${error.message}`;
+  } finally {
+    localMediaBusy.value = false;
+  }
 };
 const applyTextCase = (value, mode = 'preserve') => {
   const text = String(value || '');
@@ -990,14 +1154,15 @@ const clearVideoFile = () => {
   videoEl.value.load();
 };
 
-const processMediaFile = async (file, kind) => {
+const processMediaFile = async (file, kind, options = {}) => {
   if (!file) return;
+  const displayName = options.displayName || file.name;
   resetMediaProgress();
   updateMediaProgress(0.02, kind === 'video' ? '读取本地实拍素材' : '读取本地音频', file.name);
 
   if (kind === 'video') {
-    media.videoName = file.name;
-    let loaded = await attachVideoFile(file);
+    media.videoName = displayName;
+    let loaded = await attachVideoFile(file, displayName);
     let transcodeError = '';
     if (!loaded) {
       clearVideoFile();
@@ -1039,7 +1204,7 @@ const processMediaFile = async (file, kind) => {
     const url = WebAssetPool.getUrl(path);
     media.audioFile = file;
     media.audioUrl = url;
-    media.audioName = file.name;
+    media.audioName = displayName;
     media.audioAsset = null;
     audioEl.value.preload = 'metadata';
     audioEl.value.src = url;
@@ -1714,6 +1879,7 @@ const createLocalDraftPayload = () => ({
     exportProgress: 0,
   },
   mediaPool: mediaPool.value,
+  localMediaItems: localMediaItems.value,
   savedAt: new Date().toISOString(),
 });
 
@@ -1758,6 +1924,7 @@ const restoreLocalProjectDraft = async () => {
     media.videoDriveItem = draft.media?.videoDriveItem || null;
     media.audioDriveItem = draft.media?.audioDriveItem || null;
     mediaPool.value = Array.isArray(draft.mediaPool) ? draft.mediaPool : [];
+    localMediaItems.value = Array.isArray(draft.localMediaItems) ? draft.localMediaItems : [];
     await applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
     const savedAt = draft.savedAt ? formatCloudTime(draft.savedAt) : '';
     localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；本地视频/音频刷新后需重新选择才能预览。`;
@@ -2003,6 +2170,7 @@ watch(activeDuration, () => {
 onMounted(async () => {
   await store.loadDraft();
   await restoreLocalProjectDraft();
+  localMediaDirectoryHandle = await localforage.getItem(LOCAL_MEDIA_DIR_HANDLE_KEY).catch(() => null);
   refreshOfficialTemplates();
   animationFrameId = requestAnimationFrame(renderLoop);
 });
