@@ -152,6 +152,27 @@
             <TextAreaField v-model="overlayState.content" label="滚动正文" :rows="7" />
           </Panel>
 
+          <Panel title="署名">
+            <CheckField v-model="overlayState.signature_enabled" label="显示署名" />
+            <TextField v-model="overlayState.signature_text" label="署名文字" />
+            <SelectField v-model="overlayState.signature_align" label="署名对齐" :options="alignOptions" />
+            <SelectField v-model="overlayState.signature_case" label="署名大小写" :options="caseOptions" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.signature_x" label="中心 X" />
+              <NumberField v-model="overlayState.signature_y" label="顶部 Y" />
+              <NumberField v-model="overlayState.signature_width" label="署名宽度" />
+              <NumberField v-model="overlayState.signature_line_spacing" label="署名行距" />
+            </div>
+            <SliderControl v-model="overlayState.signature_fontsize" label="署名字号" :min="14" :max="120" />
+            <SliderControl v-model="overlayState.signature_font_weight" label="署名粗细" :min="100" :max="900" :step="100" />
+            <ColorField v-model="overlayState.signature_color" label="署名颜色" />
+            <CheckField v-model="overlayState.signature_stroke_enabled" label="署名描边" />
+            <ColorField v-model="overlayState.signature_stroke_color" label="署名描边颜色" />
+            <SliderControl v-model="overlayState.signature_stroke_width" label="署名描边宽度" :min="0" :max="12" />
+            <CheckField v-model="overlayState.signature_shadow_enabled" label="署名阴影" />
+            <ColorField v-model="overlayState.signature_shadow_color" label="署名阴影颜色" />
+            <SliderControl v-model="overlayState.signature_shadow_blur" label="署名阴影模糊" :min="0" :max="30" />
+          </Panel>
           <Panel title="正文样式">
             <SelectField v-model="overlayState.text_align" label="正文对齐" :options="alignOptions" />
             <SelectField v-model="overlayState.body_case" label="正文大小写" :options="caseOptions" />
@@ -376,7 +397,7 @@ const exportStatus = ref('准备导出');
 const mediaError = ref('');
 const selectedTaskIndex = ref(0);
 const overlayState = reactive(createScrollOverlay({
-  scroll_title: 'IN SEPTEMBER, SAY THIS PRAYER!',
+  scroll_title: '',
   content: '1. God walks with me.\n2. God guides my steps.\n3. God has a beautiful plan for me.\n4. I am protected from all evil.\n5. Every challenge is a stepping stone.',
   x: 40,
   y: 800,
@@ -416,12 +437,14 @@ const overlayState = reactive(createScrollOverlay({
   scroll_title_shadow_enabled: true,
   scroll_title_shadow_color: '#000000',
   scroll_title_shadow_blur: 8,
-  titleStrokeEnabled: true,
+  titleStrokeEnabled: false,
   feather_top: 150,
   feather_bottom: 100,
   feather_top_offset: 0,
   feather_bottom_offset: 0,
-  bg_opacity: 160,
+  bg_enabled: false,
+  bg_color: '#000000',
+  bg_opacity: 0,
   bg_radius: 16,
   bg_padding_top: 50,
   bg_padding_bottom: 50,
@@ -434,6 +457,23 @@ const overlayState = reactive(createScrollOverlay({
   bg_border_width: 3,
   bg_border_style: 'solid',
   bg_border_opacity: 100,
+  signature_enabled: false,
+  signature_text: '',
+  signature_x: 540,
+  signature_y: 1640,
+  signature_width: 900,
+  signature_fontsize: 34,
+  signature_font_weight: 700,
+  signature_color: '#FFFFFF',
+  signature_align: 'center',
+  signature_case: 'preserve',
+  signature_line_spacing: 4,
+  signature_stroke_enabled: true,
+  signature_stroke_color: '#000000',
+  signature_stroke_width: 2,
+  signature_shadow_enabled: true,
+  signature_shadow_color: '#000000',
+  signature_shadow_blur: 5,
   scroll_x_anchor: 'center',
   scroll_from_x: 540,
   scroll_to_x: 540,
@@ -597,6 +637,16 @@ const centerOverlayDefaults = () => {
   overlayState.scroll_offset_y = 0;
   overlayState.scroll_title_x = 540;
   overlayState.scroll_title_y = 400;
+  overlayState.scroll_title = '';
+  overlayState.titleStrokeEnabled = false;
+  overlayState.bg_enabled = false;
+  overlayState.bg_opacity = 0;
+  overlayState.bg_border_enabled = false;
+  overlayState.signature_enabled = false;
+  overlayState.signature_text = '';
+  overlayState.signature_x = 540;
+  overlayState.signature_y = 1640;
+  overlayState.signature_width = 900;
   overlayState.feather_top_offset = 0;
   overlayState.feather_bottom_offset = 0;
 };
@@ -807,6 +857,72 @@ const drawVideoBackground = (ctx, canvas, video) => {
   ctx.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
 };
 
+const wrapCanvasText = (ctx, text, maxWidth) => {
+  const rawLines = String(text || '').split(/\r?\n/);
+  const lines = [];
+  rawLines.forEach((rawLine) => {
+    const words = rawLine.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      lines.push('');
+      return;
+    }
+    let current = '';
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word;
+      if (ctx.measureText(next).width <= maxWidth || !current) {
+        current = next;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+    });
+    if (current) lines.push(current);
+  });
+  return lines;
+};
+
+const drawSignature = (ctx) => {
+  if (!overlayState.signature_enabled) return;
+  const text = applyTextCase(overlayState.signature_text, overlayState.signature_case).trim();
+  if (!text) return;
+
+  const fontSize = Number(overlayState.signature_fontsize) || 34;
+  const fontWeight = Number(overlayState.signature_font_weight) || 700;
+  const width = Math.max(40, Number(overlayState.signature_width) || 900);
+  const x = Number(overlayState.signature_x) || EXPORT_WIDTH / 2;
+  const y = Number(overlayState.signature_y) || 1640;
+  const lineHeight = fontSize * 1.25 + (Number(overlayState.signature_line_spacing) || 0);
+  const boxX = x - width / 2;
+  const align = overlayState.signature_align || 'center';
+
+  ctx.save();
+  ctx.font = `${fontWeight} ${fontSize}px Arial, sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = overlayState.signature_color || '#FFFFFF';
+  if (overlayState.signature_shadow_enabled) {
+    ctx.shadowColor = overlayState.signature_shadow_color || '#000000';
+    ctx.shadowBlur = Number(overlayState.signature_shadow_blur) || 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = Math.max(1, Math.round(fontSize * 0.08));
+  }
+
+  const lines = wrapCanvasText(ctx, text, width);
+  lines.forEach((line, index) => {
+    const measured = ctx.measureText(line).width;
+    let lineX = boxX;
+    if (align === 'center' || align === 'justify') lineX = boxX + (width - measured) / 2;
+    if (align === 'right') lineX = boxX + width - measured;
+    const lineY = y + index * lineHeight;
+    if (overlayState.signature_stroke_enabled && Number(overlayState.signature_stroke_width) > 0) {
+      ctx.strokeStyle = overlayState.signature_stroke_color || '#000000';
+      ctx.lineWidth = Number(overlayState.signature_stroke_width) || 2;
+      ctx.strokeText(line, lineX, lineY);
+    }
+    ctx.fillText(line, lineX, lineY);
+  });
+  ctx.restore();
+};
 const normalizeOverlayForNative = () => {
   const normalized = {
     ...JSON.parse(JSON.stringify(overlayState)),
@@ -872,6 +988,7 @@ const drawPreview = ({ fullResolution = false } = {}) => {
     console.warn('[ReelsOverlay] fallback renderer:', error);
     drawScrollOverlay(ctx, overlayForRender, previewTime.value, EXPORT_WIDTH, EXPORT_HEIGHT);
   } finally {
+    drawSignature(ctx);
     ctx.restore();
   }
 };
