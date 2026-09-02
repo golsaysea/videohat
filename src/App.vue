@@ -378,6 +378,10 @@ const selectedTaskIndex = ref(0);
 const overlayState = reactive(createScrollOverlay({
   scroll_title: 'IN SEPTEMBER, SAY THIS PRAYER!',
   content: '1. God walks with me.\n2. God guides my steps.\n3. God has a beautiful plan for me.\n4. I am protected from all evil.\n5. Every challenge is a stepping stone.',
+  x: 40,
+  y: 800,
+  w: 1000,
+  h: 800,
   fontsize: 64,
   font_weight: 800,
   text_align: 'center',
@@ -433,7 +437,7 @@ const overlayState = reactive(createScrollOverlay({
   scroll_x_anchor: 'center',
   scroll_from_x: 540,
   scroll_to_x: 540,
-  scroll_from_y: 1800,
+  scroll_from_y: 1200,
   scroll_to_y: -200,
   scroll_offset_x: 0,
   scroll_offset_y: 0,
@@ -576,9 +580,9 @@ const applyTextCase = (value, mode = 'preserve') => {
 
 const centerOverlayDefaults = () => {
   overlayState.x = 40;
-  overlayState.y = 400;
+  overlayState.y = 800;
   overlayState.w = 1000;
-  overlayState.h = 1120;
+  overlayState.h = 800;
   overlayState.text_align = 'center';
   overlayState.align = 'center';
   overlayState.scroll_title_align = 'center';
@@ -587,7 +591,7 @@ const centerOverlayDefaults = () => {
   overlayState.scroll_title_text_width = 860;
   overlayState.scroll_from_x = 540;
   overlayState.scroll_to_x = 540;
-  overlayState.scroll_from_y = 1800;
+  overlayState.scroll_from_y = 1200;
   overlayState.scroll_to_y = -200;
   overlayState.scroll_offset_x = 0;
   overlayState.scroll_offset_y = 0;
