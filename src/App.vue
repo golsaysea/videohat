@@ -47,6 +47,28 @@
           <p v-if="mediaError" class="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs leading-relaxed text-red-200">{{ mediaError }}</p>
         </div>
 
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">云端工程</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="cloudBusy" @click="refreshCloudProjects">刷新</button>
+          </div>
+          <label class="space-y-1">
+            <span class="block text-xs text-gray-500">用户标识</span>
+            <input v-model="cloudOwnerId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500" placeholder="例如 your@email.com" @change="persistCloudOwner" />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="saveProjectOnline">保存云端</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="uploadCurrentAssets">上传素材</button>
+          </div>
+          <p class="min-h-5 text-xs text-gray-500">{{ cloudStatus }}</p>
+          <select v-if="cloudProjects.length" v-model="selectedCloudProjectId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
+            <option value="">选择云端工程</option>
+            <option v-for="project in cloudProjects" :key="project.id" :value="project.id">{{ project.title }} · {{ formatCloudTime(project.updatedAt) }}</option>
+          </select>
+          <button v-if="selectedCloudProjectId" class="w-full rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
+        </div>
+
+
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
             <span class="text-xs font-bold text-gray-500">任务队列</span>
@@ -224,6 +246,7 @@ import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRen
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
+import { assetUrl, listCloudProjects, saveCloudProject, uploadCloudAsset } from './utils/cloudProjectApi.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
 
@@ -408,6 +431,8 @@ const media = reactive({
   audioName: '',
   videoDuration: 0,
   audioDuration: 0,
+  videoAsset: null,
+  audioAsset: null,
 });
 
 const exportOptions = reactive({
@@ -516,6 +541,8 @@ const syncSelectedTask = () => {
   current.audioUrl = media.audioUrl;
   current.videoDuration = media.videoDuration;
   current.audioDuration = media.audioDuration;
+  current.videoAsset = media.videoAsset;
+  current.audioAsset = media.audioAsset;
 };
 
 const applyTaskToEditor = async (task) => {
@@ -527,6 +554,10 @@ const applyTaskToEditor = async (task) => {
   media.audioName = task.audioName || media.audioName;
   media.videoDuration = task.videoDuration || media.videoDuration;
   media.audioDuration = task.audioDuration || media.audioDuration;
+  media.videoAsset = task.videoAsset || media.videoAsset;
+  media.audioAsset = task.audioAsset || media.audioAsset;
+  if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(cloudOwnerId.value, media.videoAsset.objectKey);
+  if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(cloudOwnerId.value, media.audioAsset.objectKey);
   await nextTick();
   if (videoEl.value && media.videoUrl) videoEl.value.src = media.videoUrl;
   if (audioEl.value && media.audioUrl) audioEl.value.src = media.audioUrl;
@@ -552,13 +583,15 @@ const addTaskFromCurrent = () => {
     audioName: media.audioName,
     videoDuration: media.videoDuration,
     audioDuration: media.audioDuration,
+    videoAsset: media.videoAsset,
+    audioAsset: media.audioAsset,
   });
   selectedTaskIndex.value = tasks.value.length - 1;
 };
 
 const clearQueue = () => {
   if (!window.confirm('清空全部任务队列？')) return;
-  tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, videoUrl: media.videoUrl, audioUrl: media.audioUrl }];
+  tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, videoUrl: media.videoUrl, audioUrl: media.audioUrl, videoAsset: media.videoAsset, audioAsset: media.audioAsset }];
   selectedTaskIndex.value = 0;
 };
 
@@ -581,6 +614,7 @@ const loadMedia = async (event, kind) => {
     videoEl.value.load();
     const result = await waitForMetadata(videoEl.value);
     media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : 0;
+    media.videoAsset = null;
     if (!result.ok || !media.videoDuration || !videoEl.value.videoWidth) {
       mediaError.value = `浏览器无法解码这个视频：${file.name}。大多数是 HEVC/H.265、10-bit HDR、ProRes 或相机 MOV；请先转成 H.264 + AAC 的 MP4 后再导入。`;
       media.videoUrl = '';
@@ -598,6 +632,7 @@ const loadMedia = async (event, kind) => {
     audioEl.value.load();
     const result = await waitForMetadata(audioEl.value);
     media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0;
+    media.audioAsset = null;
     if (!result.ok || !media.audioDuration) {
       mediaError.value = `浏览器无法读取这个音频：${file.name}。请换成 MP3、M4A 或 WAV。`;
       media.audioUrl = '';
@@ -930,6 +965,21 @@ const triggerDownload = (url, name) => {
   anchor.click();
 };
 
+const createProjectPayload = () => ({
+  version: '2.0.0-web',
+  app: 'VideoKit Reels Web',
+  exportOptions: JSON.parse(JSON.stringify(exportOptions)),
+  assets: {
+    video: media.videoAsset,
+    audio: media.audioAsset,
+  },
+  tasks: tasks.value.map((task) => ({
+    ...task,
+    videoUrl: undefined,
+    audioUrl: undefined,
+  })),
+});
+
 const downloadJson = (name, payload) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -939,18 +989,99 @@ const downloadJson = (name, payload) => {
 
 const downloadProject = () => {
   syncSelectedTask();
-  downloadJson(`videokit_reels_project_${Date.now()}.json`, {
-    version: '2.0.0-web',
-    app: 'VideoKit Reels Web',
-    exportOptions: JSON.parse(JSON.stringify(exportOptions)),
-    tasks: tasks.value.map((task) => ({
-      ...task,
-      videoUrl: undefined,
-      audioUrl: undefined,
-    })),
-  });
+  downloadJson(`videokit_reels_project_${Date.now()}.json`, createProjectPayload());
 };
 
+const persistCloudOwner = () => {
+  const owner = cloudOwnerId.value.trim() || 'local-user';
+  cloudOwnerId.value = owner;
+  localStorage.setItem('videohat_owner_id', owner);
+};
+
+const formatCloudTime = (value) => {
+  if (!value) return '';
+  return new Date(value).toLocaleString();
+};
+
+const refreshCloudProjects = async () => {
+  persistCloudOwner();
+  cloudBusy.value = true;
+  cloudStatus.value = '读取云端工程...';
+  try {
+    const { projects } = await listCloudProjects(cloudOwnerId.value);
+    cloudProjects.value = projects || [];
+    cloudStatus.value = `已读取 ${cloudProjects.value.length} 个工程`;
+  } catch (error) {
+    console.error(error);
+    cloudStatus.value = `云端读取失败：${error.message}`;
+  } finally {
+    cloudBusy.value = false;
+  }
+};
+
+const saveProjectOnline = async () => {
+  persistCloudOwner();
+  syncSelectedTask();
+  cloudBusy.value = true;
+  cloudStatus.value = '保存工程到 D1...';
+  try {
+    const title = tasks.value[selectedTaskIndex.value]?.baseName || 'VideoHat Reels 工程';
+    const { project } = await saveCloudProject(cloudOwnerId.value, {
+      id: currentCloudProjectId.value || undefined,
+      title,
+      payload: createProjectPayload(),
+    });
+    currentCloudProjectId.value = project.id;
+    selectedCloudProjectId.value = project.id;
+    cloudStatus.value = `已保存：${project.title}`;
+    await refreshCloudProjects();
+  } catch (error) {
+    console.error(error);
+    cloudStatus.value = `保存失败：${error.message}`;
+  } finally {
+    cloudBusy.value = false;
+  }
+};
+
+const uploadCurrentAssets = async () => {
+  persistCloudOwner();
+  cloudBusy.value = true;
+  cloudStatus.value = '上传素材到 R2...';
+  try {
+    const uploaded = [];
+    const projectId = currentCloudProjectId.value || selectedCloudProjectId.value || '';
+    if (media.videoFile) {
+      media.videoAsset = (await uploadCloudAsset(cloudOwnerId.value, media.videoFile, { kind: 'video', projectId })).asset;
+      uploaded.push(media.videoAsset);
+    }
+    if (media.audioFile) {
+      media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'audio', projectId })).asset;
+      uploaded.push(media.audioAsset);
+    }
+    syncSelectedTask();
+    cloudStatus.value = uploaded.length ? `已上传 ${uploaded.length} 个素材到 R2` : '当前没有可上传的新素材';
+  } catch (error) {
+    console.error(error);
+    cloudStatus.value = `上传失败：${error.message}`;
+  } finally {
+    cloudBusy.value = false;
+  }
+};
+
+const loadSelectedCloudProject = async () => {
+  const project = cloudProjects.value.find((item) => item.id === selectedCloudProjectId.value);
+  if (!project?.payload) return;
+  currentCloudProjectId.value = project.id;
+  Object.assign(exportOptions, project.payload.exportOptions || {});
+  tasks.value = project.payload.tasks || tasks.value;
+  media.videoAsset = project.payload.assets?.video || tasks.value[0]?.videoAsset || null;
+  media.audioAsset = project.payload.assets?.audio || tasks.value[0]?.audioAsset || null;
+  media.videoUrl = media.videoAsset?.objectKey ? assetUrl(cloudOwnerId.value, media.videoAsset.objectKey) : '';
+  media.audioUrl = media.audioAsset?.objectKey ? assetUrl(cloudOwnerId.value, media.audioAsset.objectKey) : '';
+  selectedTaskIndex.value = 0;
+  await applyTaskToEditor(tasks.value[0]);
+  cloudStatus.value = `已加载：${project.title}`;
+};
 const handleGeneratedTasks = (generatedTasks) => {
   syncSelectedTask();
   const inherited = {
