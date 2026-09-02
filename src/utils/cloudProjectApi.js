@@ -7,6 +7,11 @@ const headersFor = (ownerId, extra = {}) => ({
   ...extra,
 });
 
+const adminHeadersFor = (ownerId, adminToken, extra = {}) => ({
+  ...headersFor(ownerId, extra),
+  ...(adminToken ? { 'x-videohat-admin-token': adminToken } : {}),
+});
+
 const assertOk = async (response) => {
   if (response.ok) return response;
   let message = `HTTP ${response.status}`;
@@ -47,4 +52,27 @@ export const uploadCloudAsset = async (ownerId, file, { kind = 'asset', projectI
 export const assetUrl = (ownerId, objectKey) => {
   const params = new URLSearchParams({ key: objectKey, ownerId: ownerId || 'local-user' });
   return endpoint(`/api/assets?${params}`);
+};
+export const listOfficialTemplates = async (adminToken = '') => {
+  const response = await assertOk(await fetch(endpoint('/api/templates'), {
+    headers: adminHeadersFor('visitor', adminToken),
+  }));
+  return response.json();
+};
+
+export const saveOfficialTemplate = async (ownerId, adminToken, template) => {
+  const response = await assertOk(await fetch(endpoint('/api/templates'), {
+    method: 'POST',
+    headers: adminHeadersFor(ownerId, adminToken, { 'content-type': 'application/json' }),
+    body: JSON.stringify(template),
+  }));
+  return response.json();
+};
+
+export const deleteOfficialTemplate = async (ownerId, adminToken, templateId) => {
+  const response = await assertOk(await fetch(endpoint(`/api/templates/${encodeURIComponent(templateId)}`), {
+    method: 'DELETE',
+    headers: adminHeadersFor(ownerId, adminToken),
+  }));
+  return response.json();
 };

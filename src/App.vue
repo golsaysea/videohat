@@ -68,6 +68,27 @@
           <button v-if="selectedCloudProjectId" class="w-full rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
         </div>
 
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">官方模板</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="templateBusy" @click="refreshOfficialTemplates">刷新</button>
+          </div>
+          <select v-model="selectedTemplateId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
+            <option value="">选择模板</option>
+            <option v-for="template in officialTemplates" :key="template.id" :value="template.id">{{ template.title }}</option>
+          </select>
+          <p class="min-h-5 text-xs text-gray-500">{{ templateStatus }}</p>
+          <button v-if="selectedTemplateId" class="w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用模板参数</button>
+          <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
+            <label class="space-y-1">
+              <span class="block text-xs text-amber-200">管理员 Token</span>
+              <input v-model="adminToken" type="password" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="Cloudflare ADMIN_TOKEN" @change="persistAdminToken" />
+            </label>
+            <input v-model="templateTitle" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="模板名称" />
+            <button class="w-full rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-400/20" :disabled="templateBusy || !adminToken" @click="publishCurrentAsTemplate">保存为官方模板</button>
+          </div>
+        </div>
+
 
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
@@ -246,7 +267,7 @@ import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRen
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
-import { assetUrl, listCloudProjects, saveCloudProject, uploadCloudAsset } from './utils/cloudProjectApi.js';
+import { assetUrl, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset } from './utils/cloudProjectApi.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
 
@@ -451,6 +472,13 @@ const cloudBusy = ref(false);
 const cloudProjects = ref([]);
 const selectedCloudProjectId = ref('');
 const currentCloudProjectId = ref('');
+const isAdminMode = new URLSearchParams(window.location.search).get('admin') === '1';
+const adminToken = ref(localStorage.getItem('videohat_admin_token') || '');
+const officialTemplates = ref([]);
+const selectedTemplateId = ref('');
+const templateTitle = ref('官方 Reels 模板');
+const templateStatus = ref('读取官方模板中...');
+const templateBusy = ref(false);
 
 const durationModeOptions = [
   { value: 'auto', label: '自动：音频优先，否则视频' },
@@ -1010,6 +1038,93 @@ const formatCloudTime = (value) => {
   return new Date(value).toLocaleString();
 };
 
+const persistAdminToken = () => {
+  if (adminToken.value) localStorage.setItem('videohat_admin_token', adminToken.value);
+  else localStorage.removeItem('videohat_admin_token');
+};
+
+const templatePayloadFromCurrent = () => {
+  const payload = createProjectPayload();
+  return {
+    ...payload,
+    assets: {},
+    tasks: payload.tasks.map((task) => ({
+      ...task,
+      videoName: '',
+      audioName: '',
+      videoDuration: 0,
+      audioDuration: 0,
+      videoAsset: null,
+      audioAsset: null,
+    })),
+  };
+};
+
+const refreshOfficialTemplates = async () => {
+  templateBusy.value = true;
+  templateStatus.value = '读取官方模板...';
+  try {
+    const { templates } = await listOfficialTemplates(isAdminMode ? adminToken.value : '');
+    officialTemplates.value = templates || [];
+    if (!selectedTemplateId.value && officialTemplates.value.length) selectedTemplateId.value = officialTemplates.value[0].id;
+    templateStatus.value = officialTemplates.value.length ? `已读取 ${officialTemplates.value.length} 个模板` : '暂无官方模板';
+  } catch (error) {
+    console.error(error);
+    templateStatus.value = `模板读取失败：${error.message}`;
+  } finally {
+    templateBusy.value = false;
+  }
+};
+
+const applySelectedTemplate = async () => {
+  const template = officialTemplates.value.find((item) => item.id === selectedTemplateId.value);
+  if (!template?.payload) return;
+  Object.assign(exportOptions, template.payload.exportOptions || {});
+  const templateTasks = template.payload.tasks?.length ? template.payload.tasks : [{ ...tasks.value[0], overlays: [template.payload.overlay || overlayState] }];
+  const inheritedMedia = {
+    videoUrl: media.videoUrl,
+    audioUrl: media.audioUrl,
+    videoName: media.videoName,
+    audioName: media.audioName,
+    videoDuration: media.videoDuration,
+    audioDuration: media.audioDuration,
+    videoAsset: media.videoAsset,
+    audioAsset: media.audioAsset,
+  };
+  tasks.value = templateTasks.map((task, index) => ({
+    ...task,
+    ...inheritedMedia,
+    id: `template_${Date.now()}_${index}`,
+    baseName: task.baseName || `${template.title} ${index + 1}`,
+  }));
+  selectedTaskIndex.value = 0;
+  await applyTaskToEditor(tasks.value[0]);
+  templateStatus.value = `已套用：${template.title}`;
+};
+
+const publishCurrentAsTemplate = async () => {
+  persistAdminToken();
+  syncSelectedTask();
+  templateBusy.value = true;
+  templateStatus.value = '保存官方模板...';
+  try {
+    const { template } = await saveOfficialTemplate(cloudOwnerId.value, adminToken.value, {
+      title: templateTitle.value || tasks.value[selectedTaskIndex.value]?.baseName || '官方 Reels 模板',
+      description: 'VideoHat 官方模板',
+      payload: templatePayloadFromCurrent(),
+      isPublished: true,
+    });
+    templateStatus.value = `已发布：${template.title}`;
+    selectedTemplateId.value = template.id;
+    await refreshOfficialTemplates();
+  } catch (error) {
+    console.error(error);
+    templateStatus.value = `模板保存失败：${error.message}`;
+  } finally {
+    templateBusy.value = false;
+  }
+};
+
 const refreshCloudProjects = async () => {
   persistCloudOwner();
   cloudBusy.value = true;
@@ -1116,6 +1231,7 @@ watch(activeDuration, () => {
 
 onMounted(() => {
   store.loadDraft();
+  refreshOfficialTemplates();
   animationFrameId = requestAnimationFrame(renderLoop);
 });
 

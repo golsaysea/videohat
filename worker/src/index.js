@@ -9,7 +9,7 @@ const jsonHeaders = (env, status = 200) => ({
 const corsHeaders = (env) => ({
   'access-control-allow-origin': env.CORS_ORIGIN || '*',
   'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'access-control-allow-headers': 'content-type,x-videohat-user',
+  'access-control-allow-headers': 'content-type,x-videohat-user,x-videohat-admin-token,authorization',
   'access-control-max-age': '86400',
 });
 
@@ -50,6 +50,78 @@ const sanitizeProject = (row) => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
+
+const sanitizeTemplate = (row, includeDraft = false) => ({
+  id: row.id,
+  title: row.title,
+  description: row.description || '',
+  payload: JSON.parse(row.payload),
+  isPublished: Boolean(row.is_published),
+  createdBy: includeDraft ? row.created_by : undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const isAdminRequest = (request, env) => {
+  const configured = env.ADMIN_TOKEN;
+  if (!configured) return false;
+  const headerToken = request.headers.get('x-videohat-admin-token') || '';
+  const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
+  return headerToken === configured || bearer === configured;
+};
+
+const requireAdmin = (request, env) => {
+  if (isAdminRequest(request, env)) return null;
+  return fail(env, 'Admin token required', 401);
+};
+
+const listTemplates = async (request, env) => {
+  const includeDraft = isAdminRequest(request, env);
+  const sql = includeDraft
+    ? `SELECT id, title, description, payload, is_published, created_by, created_at, updated_at FROM templates ORDER BY updated_at DESC LIMIT 100`
+    : `SELECT id, title, description, payload, is_published, created_by, created_at, updated_at FROM templates WHERE is_published = 1 ORDER BY updated_at DESC LIMIT 100`;
+  const { results } = await env.DB.prepare(sql).all();
+  return ok(env, { templates: results.map((row) => sanitizeTemplate(row, includeDraft)), isAdmin: includeDraft });
+};
+
+const saveTemplate = async (request, env) => {
+  const denied = requireAdmin(request, env);
+  if (denied) return denied;
+
+  const ownerId = await ownerFromRequest(request, env);
+  const body = await readJson(request);
+  const id = body.id || crypto.randomUUID();
+  const title = String(body.title || '官方 Reels 模板').slice(0, 160);
+  const description = String(body.description || '').slice(0, 500);
+  const payload = JSON.stringify(body.payload || {});
+  const isPublished = body.isPublished === false ? 0 : 1;
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO templates (id, title, description, payload, is_published, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      description = excluded.description,
+      payload = excluded.payload,
+      is_published = excluded.is_published,
+      updated_at = excluded.updated_at
+  `).bind(id, title, description, payload, isPublished, ownerId, now, now).run();
+
+  const row = await env.DB.prepare(`
+    SELECT id, title, description, payload, is_published, created_by, created_at, updated_at
+    FROM templates
+    WHERE id = ?
+  `).bind(id).first();
+  return ok(env, { template: sanitizeTemplate(row, true) }, 201);
+};
+
+const deleteTemplate = async (request, env, id) => {
+  const denied = requireAdmin(request, env);
+  if (denied) return denied;
+  await env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id).run();
+  return ok(env, { ok: true });
+};
 
 const listProjects = async (request, env) => {
   const ownerId = await ownerFromRequest(request, env);
@@ -146,6 +218,9 @@ export default {
       const path = url.pathname.replace(/\/+$/, '') || '/';
 
       if (path === '/api/health') return ok(env, { ok: true, service: 'videohat-api' });
+      if (path === '/api/templates' && request.method === 'GET') return listTemplates(request, env);
+      if (path === '/api/templates' && request.method === 'POST') return saveTemplate(request, env);
+      if (path.startsWith('/api/templates/') && request.method === 'DELETE') return deleteTemplate(request, env, decodeURIComponent(path.split('/').pop()));
       if (path === '/api/projects' && request.method === 'GET') return listProjects(request, env);
       if (path === '/api/projects' && request.method === 'POST') return saveProject(request, env);
       if (path.startsWith('/api/projects/') && request.method === 'GET') return getProject(request, env, decodeURIComponent(path.split('/').pop()));
