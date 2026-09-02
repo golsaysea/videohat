@@ -32,7 +32,7 @@
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
           <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
             <span class="block font-semibold">选择本地实拍视频</span>
-            <span class="mt-1 block text-xs text-gray-500">只在本机读取；长视频自动裁剪，短视频自动循环</span>
+            <span class="mt-1 block text-xs text-gray-500">授权素材路径后，会优先读取旁边已转换 MP4</span>
             <input class="hidden" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.quicktime" @change="event => loadMedia(event, 'video')" />
           </label>
           <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
@@ -64,7 +64,7 @@
             <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="localMediaBusy" @click="restoreLocalMediaFolder">恢复</button>
           </div>
           <div class="grid grid-cols-2 gap-2">
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy" @click="selectLocalMediaFolder">选择素材文件夹</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy" @click="selectLocalMediaFolder">授权素材路径</button>
             <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy || !localMediaItems.length" @click="scanLocalMediaDirectory">刷新列表</button>
           </div>
           <p class="text-xs leading-relaxed text-gray-500">{{ localMediaStatus }}</p>
@@ -542,7 +542,7 @@ const exportStatus = ref('准备导出');
 const mediaError = ref('');
 const driveToken = ref('');
 const localMediaBusy = ref(false);
-const localMediaStatus = ref('选择素材文件夹后，转换 MP4 会自动写在原文件旁边。');
+const localMediaStatus = ref('先授权素材路径；普通选择/任务读取都会优先使用旁边已转换 MP4。');
 const localMediaItems = ref([]);
 const driveBusy = ref(false);
 const driveStatus = ref(isGoogleDriveConfigured() ? 'Google Drive 未连接' : '未配置 Google Drive 环境变量');
@@ -877,6 +877,48 @@ const hasFileInLocalFolder = async (name) => {
   }
 };
 
+
+const readFileFromLocalFolder = async (name) => {
+  if (!localMediaDirectoryHandle || !name) return null;
+  try {
+    if (!(await ensureLocalFolderPermission('readwrite'))) return null;
+    const handle = await localMediaDirectoryHandle.getFileHandle(name);
+    return handle.getFile();
+  } catch (_) {
+    return null;
+  }
+};
+
+const findLocalMediaItem = (name) => localMediaItems.value.find((item) => item.name === name || item.cacheName === name) || null;
+
+const rememberLocalMediaItem = async (file, kind, cacheName = '') => {
+  if (!localMediaDirectoryHandle || !file?.name) return;
+  const sourceName = isPreviewCacheName(file.name) ? file.name.replace(cacheSuffix, '') : file.name;
+  const existing = findLocalMediaItem(sourceName);
+  const next = {
+    provider: 'local-folder',
+    kind,
+    name: sourceName,
+    cacheName: cacheName || existing?.cacheName || (kind === 'video' && await hasFileInLocalFolder(cacheNameFor(sourceName)) ? cacheNameFor(sourceName) : ''),
+  };
+  const others = localMediaItems.value.filter((item) => item.name !== next.name);
+  localMediaItems.value = [...others, next].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const resolveLocalPreviewCache = async (file, kind) => {
+  if (kind !== 'video' || !localMediaDirectoryHandle || !file?.name || isPreviewCacheName(file.name)) return null;
+  const cacheName = cacheNameFor(file.name);
+  const cached = await readFileFromLocalFolder(cacheName);
+  if (!cached) return null;
+  await rememberLocalMediaItem(file, kind, cacheName);
+  return {
+    file: cached,
+    displayName: `${file.name} -> 已转换 MP4`,
+    sourceName: file.name,
+    cacheName,
+  };
+};
+
 const scanLocalMediaDirectory = async () => {
   localMediaBusy.value = true;
   try {
@@ -1029,6 +1071,24 @@ const centerOverlayDefaults = () => {
 
 
 
+
+const normalizeOriginalMediaName = (name) => String(name || '')
+  .replace(/ -> 已转换 MP4$/, '')
+  .replace(/ -> 预览代理 MP4$/, '')
+  .replace(cacheSuffix, '');
+
+const findLocalItemForTask = (name, kind) => {
+  const normalized = normalizeOriginalMediaName(name);
+  return localMediaItems.value.find((item) => item.kind === kind && (item.name === normalized || item.cacheName === normalized || item.name === name || item.cacheName === name)) || null;
+};
+
+const hydrateTaskMediaFromLocalFolder = async (task) => {
+  if (!localMediaDirectoryHandle || !task) return;
+  const videoItem = !task.videoUrl && task.videoName ? findLocalItemForTask(task.videoName, 'video') : null;
+  const audioItem = !task.audioUrl && task.audioName ? findLocalItemForTask(task.audioName, 'audio') : null;
+  if (videoItem) await useLocalMediaForCurrent(videoItem);
+  if (audioItem) await useLocalMediaForCurrent(audioItem);
+};
 const syncSelectedTask = () => {
   const current = tasks.value[selectedTaskIndex.value];
   if (!current) return;
@@ -1064,6 +1124,7 @@ const applyTaskToEditor = async (task) => {
   media.audioDriveItem = task.audioDriveItem || media.audioDriveItem;
   if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(cloudOwnerId.value, media.videoAsset.objectKey);
   if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(cloudOwnerId.value, media.audioAsset.objectKey);
+  if ((!media.videoUrl && media.videoName) || (!media.audioUrl && media.audioName)) await hydrateTaskMediaFromLocalFolder(task);
   await nextTick();
   if (videoEl.value && media.videoUrl) {
     videoEl.value.preload = 'auto';
@@ -1156,12 +1217,24 @@ const clearVideoFile = () => {
 
 const processMediaFile = async (file, kind, options = {}) => {
   if (!file) return;
+  const sourceName = options.sourceName || file.name;
+  const cached = await resolveLocalPreviewCache(file, kind);
+  if (cached && !options.ignoreLocalCache) {
+    localMediaStatus.value = `命中旁路 MP4 缓存：${cached.cacheName}`;
+    return processMediaFile(cached.file, kind, {
+      ...options,
+      displayName: cached.displayName,
+      sourceName: cached.sourceName,
+      ignoreLocalCache: true,
+    });
+  }
   const displayName = options.displayName || file.name;
   resetMediaProgress();
   updateMediaProgress(0.02, kind === 'video' ? '读取本地实拍素材' : '读取本地音频', file.name);
 
   if (kind === 'video') {
     media.videoName = displayName;
+    await rememberLocalMediaItem({ name: sourceName }, kind);
     let loaded = await attachVideoFile(file, displayName);
     let transcodeError = '';
     if (!loaded) {
@@ -1202,6 +1275,7 @@ const processMediaFile = async (file, kind, options = {}) => {
   } else {
     const [path] = WebAssetPool.registerFiles([file]);
     const url = WebAssetPool.getUrl(path);
+    await rememberLocalMediaItem({ name: sourceName }, kind);
     media.audioFile = file;
     media.audioUrl = url;
     media.audioName = displayName;
@@ -1236,7 +1310,7 @@ const processMediaFile = async (file, kind, options = {}) => {
 const loadMedia = async (event, kind) => {
   const file = event.target.files?.[0];
   event.target.value = '';
-  await processMediaFile(file, kind);
+  await processMediaFile(file, kind, { sourceName: file?.name });
 };
 
 const ensureDriveToken = async () => {
@@ -1927,7 +2001,7 @@ const restoreLocalProjectDraft = async () => {
     localMediaItems.value = Array.isArray(draft.localMediaItems) ? draft.localMediaItems : [];
     await applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
     const savedAt = draft.savedAt ? formatCloudTime(draft.savedAt) : '';
-    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；本地视频/音频刷新后需重新选择才能预览。`;
+    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；素材路径记录已保留，点“恢复”后可继续读取本地素材。`;
   } catch (error) {
     console.error(error);
     localDraftStatus.value = `本地草稿恢复失败：${error.message}`;
@@ -2169,8 +2243,8 @@ watch(activeDuration, () => {
 
 onMounted(async () => {
   await store.loadDraft();
-  await restoreLocalProjectDraft();
   localMediaDirectoryHandle = await localforage.getItem(LOCAL_MEDIA_DIR_HANDLE_KEY).catch(() => null);
+  await restoreLocalProjectDraft();
   refreshOfficialTemplates();
   animationFrameId = requestAnimationFrame(renderLoop);
 });
