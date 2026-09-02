@@ -7,10 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "api:dev": "wrangler dev --persist-to .wrangler/state",
-    "api:deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply videohat-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply videohat-db --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply videohat-db --remote",
+    "pages:dev": "npm run build && wrangler pages dev dist --d1 DB=videohat-db --r2 MEDIA --binding CORS_ORIGIN=*",
+    "pages:deploy": "npm run build && wrangler pages deploy dist"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",

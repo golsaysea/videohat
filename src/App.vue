@@ -512,6 +512,12 @@ const caseOptions = [
   { value: 'lower', label: '全部小写' },
 ];
 
+const borderStyleOptions = [
+  { value: 'solid', label: '实线' },
+  { value: 'dashed', label: '虚线' },
+  { value: 'dotted', label: '点线' },
+];
+
 const activeDuration = computed(() => {
   if (exportOptions.durationMode === 'custom') return Math.max(1, exportOptions.customDuration || 1);
   if (exportOptions.durationMode === 'audio') return media.audioDuration || media.videoDuration || 15;

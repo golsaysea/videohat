@@ -15,6 +15,7 @@ const corsHeaders = (env) => ({
 
 const ok = (env, data, status = 200) => Response.json(data, jsonHeaders(env, status));
 const fail = (env, message, status = 400) => ok(env, { error: message }, status);
+const mediaBucket = (env) => env.MEDIA || env.ASSETS;
 
 const slug = (value) => String(value || '')
   .trim()
@@ -180,7 +181,10 @@ const uploadAsset = async (request, env) => {
   const contentType = request.headers.get('content-type') || 'application/octet-stream';
   const size = Number(request.headers.get('content-length') || 0);
 
-  await env.ASSETS.put(objectKey, request.body, {
+  const bucket = mediaBucket(env);
+  if (!bucket) return fail(env, 'Media bucket binding missing', 500);
+
+  await bucket.put(objectKey, request.body, {
     httpMetadata: { contentType },
     customMetadata: { ownerId, projectId: projectId || '', fileName, kind },
   });
@@ -198,7 +202,9 @@ const getAsset = async (request, env) => {
   const url = new URL(request.url);
   const key = url.searchParams.get('key');
   if (!key || !key.startsWith(`${ownerId}/`)) return fail(env, 'Asset not found', 404);
-  const object = await env.ASSETS.get(key);
+  const bucket = mediaBucket(env);
+  if (!bucket) return fail(env, 'Media bucket binding missing', 500);
+  const object = await bucket.get(key);
   if (!object) return fail(env, 'Asset not found', 404);
   return new Response(object.body, {
     headers: {

@@ -1,56 +1,83 @@
-# VideoHat Cloud Storage
+# VideoHat Cloud Storage on Cloudflare Pages
 
-This project includes a Cloudflare Worker API for saving VideoHat Reels projects to D1 and uploading media assets to R2.
+This project uses Cloudflare Pages for the frontend and Pages Functions for the `/api/*` backend.
 
 ## What Goes Where
 
+- Pages: Vue frontend and `/api/*` Pages Functions.
 - D1: users, project metadata, project JSON payloads, official template JSON payloads, asset records.
 - R2: uploaded video/audio/export files and other large binary assets.
+- Pages Secret: `ADMIN_TOKEN` for publishing official templates.
 - Browser local storage: temporary editor cache and the current lightweight user id.
 
-## First Setup
+## Cloudflare Dashboard Setup
 
-1. Install dependencies:
+1. Open your existing Cloudflare Pages project:
 
-```bash
-npm install
+```text
+Workers & Pages -> your Pages project
 ```
 
-2. Create Cloudflare resources:
+2. Add the D1 binding:
+
+```text
+Settings -> Bindings -> Add -> D1 database
+Variable name: DB
+D1 database: videohat-db
+```
+
+3. Add the R2 binding:
+
+```text
+Settings -> Bindings -> Add -> R2 bucket
+Variable name: MEDIA
+R2 bucket: videohat-assets
+```
+
+`MEDIA` is used because `ASSETS` is reserved in Pages.
+
+4. Add the admin secret:
+
+```text
+Settings -> Variables and Secrets -> Add
+Name: ADMIN_TOKEN
+Type: Secret / encrypted
+Value: your private admin password
+```
+
+5. Redeploy the Pages project after changing bindings or secrets.
+
+## First Resource Setup
+
+If you have not created the resources yet, create them once:
 
 ```bash
 npx wrangler d1 create videohat-db
 npx wrangler r2 bucket create videohat-assets
 ```
 
-3. Copy the D1 `database_id` from the create command into `wrangler.jsonc`.
+Copy the D1 `database_id` into `wrangler.jsonc`.
 
-4. Create an admin token for publishing official templates:
-
-```bash
-npx wrangler secret put ADMIN_TOKEN
-```
-
-5. Apply the D1 schema:
+Apply the D1 schema:
 
 ```bash
-npx wrangler d1 migrations apply videohat-db --local
-npx wrangler d1 migrations apply videohat-db --remote
+npm run db:migrate:remote
 ```
 
-6. Run the API locally:
+This applies both migrations in `worker/migrations` and creates:
+
+- `users`
+- `projects`
+- `assets`
+- `templates`
+
+## Local Pages Test
 
 ```bash
-npx wrangler dev --persist-to .wrangler/state
+npm run pages:dev
 ```
 
-7. If the Worker is separate from the frontend, set:
-
-```bash
-VITE_VIDEOHAT_API_BASE=https://your-worker-url
-```
-
-Then rebuild the frontend.
+This builds the app and serves it through Cloudflare Pages Functions locally.
 
 ## API
 
@@ -62,13 +89,13 @@ Then rebuild the frontend.
 - `POST /api/assets?kind=video&fileName=name.mp4`
 - `GET /api/assets?key=r2/object/key`
 - `GET /api/templates` reads published official templates for every visitor.
-- `POST /api/templates` publishes or updates an official template. Requires `X-VideoHat-Admin-Token` or `Authorization: Bearer <token>` matching the Worker `ADMIN_TOKEN` secret.
+- `POST /api/templates` publishes or updates an official template. Requires `X-VideoHat-Admin-Token` or `Authorization: Bearer <token>` matching `ADMIN_TOKEN`.
 - `DELETE /api/templates/:id` deletes an official template. Requires the same admin token.
 
 ## Official Template Flow
 
-Visitors open the normal site and can only read published official templates, then apply the template parameters to their own uploaded video and audio.
+Visitors open the normal Pages site and can only read published official templates, then apply the template parameters to their own uploaded video and audio.
 
-Admins open the site with `?admin=1`, enter the `ADMIN_TOKEN`, tune the current Reels parameters, then click `保存为官方模板`. Template publishing stores styles, text samples, export options, and task parameters in D1. Uploaded local media is intentionally not attached to templates yet, so templates stay reusable for other visitors.
+Admins open the Pages site with `?admin=1`, enter `ADMIN_TOKEN`, tune the current Reels parameters, then click `保存为官方模板`. Template publishing stores styles, text samples, export options, and task parameters in D1. Uploaded local media is intentionally not attached to templates yet, so templates stay reusable for other visitors.
 
 The current first version uses `X-VideoHat-User` as a lightweight owner id. Replace that with a real auth identity later when login is added.

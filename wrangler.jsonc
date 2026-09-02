@@ -1,8 +1,8 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "videohat-api",
-  "main": "worker/src/index.js",
+  "name": "videohat",
   "compatibility_date": "2026-09-02",
+  "pages_build_output_dir": "dist",
   "observability": { "enabled": true },
   "vars": {
     "CORS_ORIGIN": "*"
@@ -17,7 +17,7 @@
   ],
   "r2_buckets": [
     {
-      "binding": "ASSETS",
+      "binding": "MEDIA",
       "bucket_name": "videohat-assets"
     }
   ]
