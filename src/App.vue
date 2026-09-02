@@ -116,7 +116,7 @@
       </aside>
 
       <section class="relative flex min-h-0 flex-col items-center justify-center overflow-hidden bg-[#03050a] p-6">
-        <div class="absolute left-5 top-4 text-xs text-gray-500">Canvas 预览 1080 x 1920</div>
+        <div class="absolute left-5 top-4 text-xs text-gray-500">Canvas 预览 {{ previewResolutionLabel }}</div>
         <div class="relative flex h-full max-h-[calc(100vh-160px)] w-auto aspect-[9/16] items-center justify-center overflow-hidden rounded border border-[#252b37] bg-black shadow-[0_0_40px_rgba(0,0,0,0.65)]">
           <canvas ref="previewCanvas" width="1080" height="1920" class="h-full w-full object-contain"></canvas>
         </div>
@@ -141,6 +141,7 @@
             <SelectField v-model="exportOptions.durationMode" label="时长来源" :options="durationModeOptions" />
             <NumberField v-if="exportOptions.durationMode === 'custom'" v-model="exportOptions.customDuration" label="自定义秒数" :min="1" />
             <SelectField v-model="exportOptions.fitMode" label="视频匹配" :options="fitModeOptions" />
+            <SelectField v-model="exportOptions.previewScale" label="预览性能" :options="previewScaleOptions" />
             <SelectField v-model="exportOptions.quality" label="导出画质" :options="qualityOptions" />
             <SelectField v-model="exportOptions.format" label="导出格式" :options="formatOptions" />
             <NumberField v-model="exportOptions.fps" label="帧率" :min="15" :max="60" />
@@ -463,6 +464,7 @@ const exportOptions = reactive({
   quality: 'high',
   format: 'mp4',
   fps: 30,
+  previewScale: '0.5',
 });
 
 const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '' }]);
@@ -500,6 +502,11 @@ const formatOptions = [
   { value: 'mp4', label: 'MP4：发帖兼容' },
   { value: 'webm', label: 'WebM：快速导出' },
 ];
+const previewScaleOptions = [
+  { value: '0.5', label: '最高流畅 540p' },
+  { value: '0.667', label: '均衡清晰 720p' },
+  { value: '1', label: '高清预览 1080p' },
+];
 const alignOptions = [
   { value: 'center', label: '居中对齐' },
   { value: 'left', label: '左对齐' },
@@ -518,12 +525,23 @@ const borderStyleOptions = [
   { value: 'dotted', label: '点线' },
 ];
 
+const EXPORT_WIDTH = 1080;
+const EXPORT_HEIGHT = 1920;
+
 const activeDuration = computed(() => {
   if (exportOptions.durationMode === 'custom') return Math.max(1, exportOptions.customDuration || 1);
   if (exportOptions.durationMode === 'audio') return media.audioDuration || media.videoDuration || 15;
   if (exportOptions.durationMode === 'video') return media.videoDuration || media.audioDuration || 15;
   return media.audioDuration || media.videoDuration || 15;
 });
+const previewResolution = computed(() => {
+  const scale = Number(exportOptions.previewScale) || 0.5;
+  return {
+    width: Math.max(1, Math.round(EXPORT_WIDTH * scale)),
+    height: Math.max(1, Math.round(EXPORT_HEIGHT * scale)),
+  };
+});
+const previewResolutionLabel = computed(() => `${previewResolution.value.width} x ${previewResolution.value.height}`);
 
 let animationFrameId = 0;
 let audioContext = null;
@@ -813,27 +831,46 @@ const normalizeOverlayForNative = () => {
   return normalized;
 };
 
-const drawPreview = () => {
+const setCanvasResolution = (fullResolution = false) => {
+  const canvas = previewCanvas.value;
+  if (!canvas) return 1;
+  const scale = fullResolution ? 1 : (Number(exportOptions.previewScale) || 0.5);
+  const width = Math.max(1, Math.round(EXPORT_WIDTH * scale));
+  const height = Math.max(1, Math.round(EXPORT_HEIGHT * scale));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return scale;
+};
+
+const drawPreview = ({ fullResolution = false } = {}) => {
   const canvas = previewCanvas.value;
   if (!canvas) return;
+  const scale = setCanvasResolution(fullResolution || wasExporting);
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawVideoBackground(ctx, canvas, videoEl.value);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = scale < 1 ? 'medium' : 'high';
+  if (scale !== 1) ctx.scale(scale, scale);
+
+  const renderCanvas = { width: EXPORT_WIDTH, height: EXPORT_HEIGHT };
+  drawVideoBackground(ctx, renderCanvas, videoEl.value);
 
   const overlayForRender = normalizeOverlayForNative();
   const needsFallbackRenderer = overlayForRender.text_align === 'justify' || overlayForRender.scroll_title_align === 'justify';
   try {
     if (needsFallbackRenderer) {
-      drawScrollOverlay(ctx, overlayForRender, previewTime.value, canvas.width, canvas.height);
+      drawScrollOverlay(ctx, overlayForRender, previewTime.value, EXPORT_WIDTH, EXPORT_HEIGHT);
     } else {
-      ReelsOverlay.drawOverlay(ctx, overlayForRender, previewTime.value, canvas.width, canvas.height);
+      ReelsOverlay.drawOverlay(ctx, overlayForRender, previewTime.value, EXPORT_WIDTH, EXPORT_HEIGHT);
     }
   } catch (error) {
     console.warn('[ReelsOverlay] fallback renderer:', error);
-    drawScrollOverlay(ctx, overlayForRender, previewTime.value, canvas.width, canvas.height);
+    drawScrollOverlay(ctx, overlayForRender, previewTime.value, EXPORT_WIDTH, EXPORT_HEIGHT);
+  } finally {
+    ctx.restore();
   }
 };
-
 const renderLoop = () => {
   if (isPlaying.value && !wasExporting) {
     previewTime.value = media.audioUrl && audioEl.value ? audioEl.value.currentTime : (videoEl.value?.currentTime || previewTime.value);
@@ -947,6 +984,7 @@ const exportCurrentTask = async () => {
     await audioEl.value.play().catch(() => {});
   }
 
+  drawPreview({ fullResolution: true });
   const stream = canvas.captureStream(exportOptions.fps || 30);
   if (mediaDestination?.stream.getAudioTracks().length) {
     stream.addTrack(mediaDestination.stream.getAudioTracks()[0]);
@@ -1020,7 +1058,7 @@ const exportCurrentTask = async () => {
     exportProgress.value = Math.min(recordProgressMax, (previewTime.value / duration) * recordProgressMax);
     exportStatus.value = `导出 ${formatDuration(previewTime.value)} / ${formatDuration(duration)}`;
     syncVideoForExport(elapsed);
-    drawPreview();
+    drawPreview({ fullResolution: true });
     if (elapsed >= duration) {
       if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
       return;
