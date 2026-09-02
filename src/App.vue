@@ -31,8 +31,8 @@
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
           <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
-            <span class="block font-semibold">上传背景视频</span>
-            <span class="mt-1 block text-xs text-gray-500">长视频自动裁剪，短视频自动循环</span>
+            <span class="block font-semibold">选择本地实拍视频</span>
+            <span class="mt-1 block text-xs text-gray-500">只在本机读取；长视频自动裁剪，短视频自动循环</span>
             <input class="hidden" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.quicktime" @change="event => loadMedia(event, 'video')" />
           </label>
           <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
@@ -44,7 +44,18 @@
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">视频：{{ formatDuration(media.videoDuration) }}</div>
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">音频：{{ formatDuration(media.audioDuration) }}</div>
           </div>
-          <p v-if="mediaError" class="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs leading-relaxed text-red-200">{{ mediaError }}</p>
+          <div v-if="mediaProgress > 0 && mediaProgress < 1" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
+            <div class="flex items-center justify-between text-xs text-blue-100">
+              <span>本地处理 {{ Math.round(mediaProgress * 100) }}%</span>
+              <span>{{ mediaEta }}</span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded bg-black/40">
+              <div class="h-full rounded bg-blue-400 transition-all" :style="{ width: `${Math.round(mediaProgress * 100)}%` }"></div>
+            </div>
+          </div>
+          <p v-if="mediaError" class="rounded border border-blue-500/30 bg-blue-500/10 p-2 text-xs leading-relaxed text-blue-100">{{ mediaError }}</p>
+          <p class="text-xs leading-relaxed text-gray-500">本地选择不会上传后台；只有点击“手动上传素材到 R2”才会占用 R2。</p>
+          <p class="text-xs leading-relaxed text-gray-500">{{ localDraftStatus }}</p>
         </div>
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
@@ -58,7 +69,7 @@
           </label>
           <div class="grid grid-cols-2 gap-2">
             <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="saveProjectOnline">保存云端</button>
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="uploadCurrentAssets">上传素材</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="uploadCurrentAssets">手动上传素材到 R2</button>
           </div>
           <p class="min-h-5 text-xs text-gray-500">{{ cloudStatus }}</p>
           <select v-if="cloudProjects.length" v-model="selectedCloudProjectId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
@@ -300,6 +311,7 @@
 
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import localforage from 'localforage';
 import BulkModal from './components/BulkModal.vue';
 import { useBulkStore } from './stores/bulkStore';
 import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRenderer';
@@ -412,6 +424,11 @@ const exportedUrl = ref('');
 const exportProgress = ref(0);
 const exportStatus = ref('准备导出');
 const mediaError = ref('');
+const mediaProgress = ref(0);
+const mediaEta = ref('');
+const localDraftStatus = ref('本地草稿未保存');
+let mediaProgressStartedAt = 0;
+let localDraftTimer = 0;
 const selectedTaskIndex = ref(0);
 const overlayState = reactive(createScrollOverlay({
   scroll_title: '',
@@ -659,11 +676,36 @@ const formatDuration = (value) => {
 
 const AUTO_TRANSCODE_WARN_BYTES = 80 * 1024 * 1024;
 const AUTO_TRANSCODE_LIMIT_BYTES = 220 * 1024 * 1024;
+const LOCAL_PROJECT_DRAFT_KEY = 'videohat_reels_local_project_v1';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '未知大小';
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const formatEta = (seconds) => {
+  const safeSeconds = Math.max(1, Math.round(Number(seconds) || 0));
+  if (safeSeconds >= 60) return `${Math.floor(safeSeconds / 60)}分${String(safeSeconds % 60).padStart(2, '0')}秒`;
+  return `${safeSeconds}秒`;
+};
+
+const resetMediaProgress = () => {
+  mediaProgress.value = 0;
+  mediaEta.value = '';
+  mediaProgressStartedAt = performance.now();
+};
+
+const updateMediaProgress = (progress, status, fileName = '') => {
+  const numeric = Number.isFinite(progress) ? progress : 0;
+  const clamped = Math.max(0, Math.min(1, numeric));
+  mediaProgress.value = clamped;
+  const elapsed = (performance.now() - mediaProgressStartedAt) / 1000;
+  const remaining = clamped > 0.03 && clamped < 0.99 ? Math.max(1, (elapsed / clamped) - elapsed) : 0;
+  mediaEta.value = remaining ? `预计剩余 ${formatEta(remaining)}` : '';
+  const pct = `${Math.round(clamped * 100)}%`;
+  const eta = mediaEta.value ? ` · ${mediaEta.value}` : '';
+  mediaError.value = `${status} ${pct}${eta}${fileName ? `：${fileName}` : ''}`;
 };
 const applyTextCase = (value, mode = 'preserve') => {
   const text = String(value || '');
@@ -797,10 +839,10 @@ const attachVideoFile = async (file, displayName = file.name) => {
   videoEl.value.loop = true;
   videoEl.value.muted = true;
   videoEl.value.load();
-  const result = await waitForMetadata(videoEl.value);
+  const result = await waitForMetadata(videoEl.value, 8000);
   media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : 0;
   if (result.ok && media.videoDuration && videoEl.value.videoWidth) {
-    const frameReady = await waitForVideoFrameReady(videoEl.value);
+    const frameReady = await waitForVideoFrameReady(videoEl.value, 8000);
     media.videoAsset = null;
     return frameReady.ok;
   }
@@ -822,11 +864,11 @@ const loadMedia = async (event, kind) => {
   const file = event.target.files?.[0];
   event.target.value = '';
   if (!file) return;
-  mediaError.value = '';
+  resetMediaProgress();
+  updateMediaProgress(0.02, kind === 'video' ? '读取本地实拍素材' : '读取本地音频', file.name);
 
   if (kind === 'video') {
     media.videoName = file.name;
-    mediaError.value = `读取实拍素材：${file.name}`;
     let loaded = await attachVideoFile(file);
     let transcodeError = '';
     if (!loaded) {
@@ -834,18 +876,18 @@ const loadMedia = async (event, kind) => {
       const fileSize = formatFileSize(file.size);
       if (file.size > AUTO_TRANSCODE_LIMIT_BYTES) {
         transcodeError = `文件 ${fileSize}，超过浏览器安全转码上限`;
+        mediaProgress.value = 0;
       } else if (file.size > AUTO_TRANSCODE_WARN_BYTES && !window.confirm(`这个实拍素材有 ${fileSize}，浏览器内转码可能会卡几分钟。继续尝试转换吗？`)) {
         transcodeError = '已取消浏览器内转码';
+        mediaProgress.value = 0;
       } else {
-        mediaError.value = `浏览器无法直接预览，正在生成轻量预览代理：${file.name}`;
+        updateMediaProgress(0.08, '浏览器无法直接预览，开始生成轻量预览代理', file.name);
         try {
           const converted = await transcodeInputVideoToMp4(file, {
             previewProxy: true,
-            onProgress: (progress, status) => {
-              const pct = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
-              mediaError.value = `${status}${pct}：${file.name}`;
-            },
+            onProgress: (progress, status) => updateMediaProgress(progress, status, file.name),
           });
+          updateMediaProgress(0.98, '挂载预览代理', converted.name);
           loaded = await attachVideoFile(converted, `${file.name} -> 预览代理 MP4`);
           if (!loaded) transcodeError = '预览代理 MP4 仍无法被浏览器读取';
         } catch (error) {
@@ -856,10 +898,13 @@ const loadMedia = async (event, kind) => {
       }
     }
     if (!loaded) {
+      mediaProgress.value = 0;
+      mediaEta.value = '';
       mediaError.value = `暂时无法解码这个视频：${file.name}。${transcodeError ? `原因：${transcodeError}。` : ''}这类 MOV/HEVC 在浏览器里经常不能直接预览；请先转成 H.264 + AAC 的 MP4，或等待后端 FFmpeg/GPU 导出服务接入。`;
       clearVideoFile();
     } else {
-      mediaError.value = media.videoName.includes('预览代理') ? '已使用轻量预览代理；高清成片请走后端 FFmpeg/GPU 导出。' : '';
+      updateMediaProgress(1, media.videoName.includes('预览代理') ? '预览代理已就绪' : '本地实拍素材已就绪', file.name);
+      if (media.videoName.includes('预览代理')) mediaError.value += '。高清成片请走后端 FFmpeg/GPU 导出。';
     }
   } else {
     const [path] = WebAssetPool.registerFiles([file]);
@@ -867,28 +912,33 @@ const loadMedia = async (event, kind) => {
     media.audioFile = file;
     media.audioUrl = url;
     media.audioName = file.name;
+    media.audioAsset = null;
     audioEl.value.preload = 'metadata';
     audioEl.value.src = url;
     audioEl.value.load();
-    const result = await waitForMetadata(audioEl.value);
+    updateMediaProgress(0.35, '读取音频时长', file.name);
+    const result = await waitForMetadata(audioEl.value, 12000);
     media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0;
-    media.audioAsset = null;
     if (!result.ok || !media.audioDuration) {
+      mediaProgress.value = 0;
+      mediaEta.value = '';
       mediaError.value = `浏览器无法读取这个音频：${file.name}。请换成 MP3、M4A 或 WAV。`;
       media.audioUrl = '';
       media.audioName = '';
       media.audioDuration = 0;
       audioEl.value.removeAttribute('src');
       audioEl.value.load();
+    } else {
+      updateMediaProgress(1, '音频已就绪', file.name);
     }
   }
 
   previewTime.value = 0;
   syncSelectedTask();
+  scheduleLocalProjectSave();
   drawPreview();
 
 };
-
 const waitForMetadata = (element, timeoutMs = 30000) => new Promise((resolve) => {
   if (element.readyState >= 1 && Number.isFinite(element.duration)) {
     resolve({ ok: true });
@@ -1398,6 +1448,67 @@ const createProjectPayload = () => ({
   })),
 });
 
+const createLocalDraftPayload = () => ({
+  ...createProjectPayload(),
+  selectedTaskIndex: selectedTaskIndex.value,
+  media: {
+    videoName: media.videoName,
+    audioName: media.audioName,
+    videoDuration: media.videoDuration,
+    audioDuration: media.audioDuration,
+    videoAsset: media.videoAsset,
+    audioAsset: media.audioAsset,
+  },
+  savedAt: new Date().toISOString(),
+});
+
+const saveLocalProjectDraft = async () => {
+  try {
+    syncSelectedTask();
+    await localforage.setItem(LOCAL_PROJECT_DRAFT_KEY, createLocalDraftPayload());
+    localDraftStatus.value = `本地草稿已保存 ${new Date().toLocaleTimeString()}`;
+  } catch (error) {
+    console.error(error);
+    localDraftStatus.value = `本地草稿保存失败：${error.message}`;
+  }
+};
+
+const scheduleLocalProjectSave = () => {
+  if (!store.isLoaded) return;
+  if (localDraftTimer) window.clearTimeout(localDraftTimer);
+  localDraftStatus.value = '本地草稿待保存...';
+  localDraftTimer = window.setTimeout(saveLocalProjectDraft, 500);
+};
+
+const restoreLocalProjectDraft = async () => {
+  try {
+    const draft = await localforage.getItem(LOCAL_PROJECT_DRAFT_KEY);
+    if (!draft?.tasks?.length) {
+      localDraftStatus.value = '本地草稿未保存';
+      return;
+    }
+    Object.assign(exportOptions, draft.exportOptions || {});
+    tasks.value = draft.tasks;
+    selectedTaskIndex.value = Math.min(Number(draft.selectedTaskIndex) || 0, tasks.value.length - 1);
+    media.videoFile = null;
+    media.audioFile = null;
+    media.videoUrl = '';
+    media.audioUrl = '';
+    media.videoName = draft.media?.videoName || '';
+    media.audioName = draft.media?.audioName || '';
+    media.videoDuration = Number(draft.media?.videoDuration) || 0;
+    media.audioDuration = Number(draft.media?.audioDuration) || 0;
+    media.videoAsset = draft.media?.videoAsset || null;
+    media.audioAsset = draft.media?.audioAsset || null;
+    await applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
+    const savedAt = draft.savedAt ? formatCloudTime(draft.savedAt) : '';
+    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；本地视频/音频刷新后需重新选择才能预览。`;
+  } catch (error) {
+    console.error(error);
+    localDraftStatus.value = `本地草稿恢复失败：${error.message}`;
+  }
+};
+
 const downloadJson = (name, payload) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1605,15 +1716,18 @@ const handleGeneratedTasks = (generatedTasks) => {
 
 watch(overlayState, () => {
   syncSelectedTask();
+  scheduleLocalProjectSave();
   drawPreview();
 
 }, { deep: true });
+watch(exportOptions, scheduleLocalProjectSave, { deep: true });
 watch(activeDuration, () => {
   if (previewTime.value > activeDuration.value) previewTime.value = 0;
 });
 
-onMounted(() => {
-  store.loadDraft();
+onMounted(async () => {
+  await store.loadDraft();
+  await restoreLocalProjectDraft();
   refreshOfficialTemplates();
   animationFrameId = requestAnimationFrame(renderLoop);
 });
@@ -1621,6 +1735,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   if (exportStopTimer) cancelAnimationFrame(exportStopTimer);
+  if (localDraftTimer) window.clearTimeout(localDraftTimer);
   stopPlayback();
 });
 </script>
