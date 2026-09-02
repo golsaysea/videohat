@@ -970,6 +970,7 @@ const selectLocalMediaFolder = async () => {
     localMediaDirectoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
     await localforage.setItem(LOCAL_MEDIA_DIR_HANDLE_KEY, localMediaDirectoryHandle);
     await scanLocalMediaDirectory();
+    await rehydrateSelectedTaskMediaFromLocalFolder();
   } catch (error) {
     if (error?.name !== 'AbortError') localMediaStatus.value = `选择素材文件夹失败：${error.message}`;
   } finally {
@@ -986,6 +987,7 @@ const restoreLocalMediaFolder = async () => {
       return;
     }
     await scanLocalMediaDirectory();
+    await rehydrateSelectedTaskMediaFromLocalFolder();
   } catch (error) {
     console.error(error);
     localMediaStatus.value = `恢复素材文件夹失败：${error.message}`;
@@ -1006,6 +1008,7 @@ const autoRestoreLocalMediaFolder = async () => {
     const permission = await localMediaDirectoryHandle.queryPermission({ mode: 'readwrite' });
     if (permission === 'granted') {
       await scanLocalMediaDirectory();
+      await rehydrateSelectedTaskMediaFromLocalFolder();
       return;
     }
 
@@ -1015,6 +1018,7 @@ const autoRestoreLocalMediaFolder = async () => {
 
     if (requested === 'granted') {
       await scanLocalMediaDirectory();
+      await rehydrateSelectedTaskMediaFromLocalFolder();
     } else {
       localMediaStatus.value = '已找到上次素材路径记录；浏览器需要你点一次“恢复”完成授权。';
     }
@@ -1127,12 +1131,33 @@ const findLocalItemForTask = (name, kind) => {
   return localMediaItems.value.find((item) => item.kind === kind && (item.name === normalized || item.cacheName === normalized || item.name === name || item.cacheName === name)) || null;
 };
 
+const hydrateNamedLocalMedia = async (name, kind) => {
+  if (!name || !localMediaDirectoryHandle) return false;
+  const item = findLocalItemForTask(name, kind);
+  if (item) {
+    await useLocalMediaForCurrent(item);
+    return true;
+  }
+
+  const normalized = normalizeOriginalMediaName(name);
+  const candidates = kind === 'video' ? [cacheNameFor(normalized), normalized] : [normalized];
+  for (const fileName of candidates) {
+    const file = await readFileFromLocalFolder(fileName);
+    if (!file) continue;
+    await processMediaFile(file, kind, {
+      displayName: kind === 'video' && isPreviewCacheName(fileName) ? `${normalized} -> 已转换 MP4` : normalized,
+      sourceName: normalized,
+      ignoreLocalCache: isPreviewCacheName(fileName),
+    });
+    return true;
+  }
+  return false;
+};
+
 const hydrateTaskMediaFromLocalFolder = async (task) => {
   if (!localMediaDirectoryHandle || !task) return;
-  const videoItem = !task.videoUrl && task.videoName ? findLocalItemForTask(task.videoName, 'video') : null;
-  const audioItem = !task.audioUrl && task.audioName ? findLocalItemForTask(task.audioName, 'audio') : null;
-  if (videoItem) await useLocalMediaForCurrent(videoItem);
-  if (audioItem) await useLocalMediaForCurrent(audioItem);
+  if (!task.videoUrl && task.videoName) await hydrateNamedLocalMedia(task.videoName, 'video');
+  if (!task.audioUrl && task.audioName) await hydrateNamedLocalMedia(task.audioName, 'audio');
 };
 const syncSelectedTask = () => {
   const current = tasks.value[selectedTaskIndex.value];
@@ -1192,6 +1217,23 @@ const applyTaskToEditor = async (task) => {
   }
   previewTime.value = 0;
   drawPreview();
+};
+
+const rehydrateSelectedTaskMediaFromLocalFolder = async () => {
+  const task = tasks.value[selectedTaskIndex.value];
+  if (!task || !localMediaDirectoryHandle) return false;
+  const hadVideo = Boolean(media.videoUrl);
+  const hadAudio = Boolean(media.audioUrl);
+  await hydrateTaskMediaFromLocalFolder(task);
+  const restored = (!hadVideo && Boolean(media.videoUrl)) || (!hadAudio && Boolean(media.audioUrl));
+  if (restored) {
+    await nextTick();
+    drawPreview();
+    syncSelectedTask();
+    scheduleLocalProjectSave();
+    localDraftStatus.value = '素材已从本地文件夹重新挂载，预览已恢复。';
+  }
+  return restored;
 };
 
 const selectTask = (index) => {
@@ -2338,6 +2380,7 @@ onMounted(async () => {
   await store.loadDraft();
   await autoRestoreLocalMediaFolder();
   await restoreLocalProjectDraft();
+  await rehydrateSelectedTaskMediaFromLocalFolder();
   refreshOfficialTemplates();
   animationFrameId = requestAnimationFrame(renderLoop);
 });
