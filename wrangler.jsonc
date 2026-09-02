@@ -3,8 +3,24 @@
   "name": "videohat",
   "compatibility_date": "2026-09-02",
   "pages_build_output_dir": "dist",
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true
+  },
   "vars": {
     "CORS_ORIGIN": "*"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "videohat-db",
+      "database_id": "bd491dea-0928-4f70-b0e0-793ad1215ea3",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "videohat-assets"
+    }
+  ]
 }
