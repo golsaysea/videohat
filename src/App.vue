@@ -60,6 +60,26 @@
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
           <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">Google Drive 媒体池</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="driveBusy" @click="connectGoogleDrive">连接</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('video')">选云盘视频</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('audio')">选云盘音频</button>
+          </div>
+          <p class="text-xs leading-relaxed text-gray-500">{{ driveStatus }}</p>
+          <div v-if="mediaPool.length" class="max-h-36 space-y-2 overflow-y-auto">
+            <div v-for="item in mediaPool" :key="item.provider + '-' + item.id" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
+              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
+              <div class="mt-2 flex gap-2">
+                <button class="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[11px] text-blue-200 hover:bg-blue-500/20" :disabled="driveBusy" @click="useDriveMediaForCurrent(item)">用于当前任务</button>
+                <button class="rounded border border-[#3a4152] px-2 py-1 text-[11px] text-gray-400 hover:bg-white/5" @click="removeMediaPoolItem(item)">移除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
             <h3 class="m-0 text-sm font-bold text-cyan-300">云端工程</h3>
             <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="cloudBusy" @click="refreshCloudProjects">刷新</button>
           </div>
@@ -393,6 +413,7 @@ import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeInputVideoToMp4, transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
 import { assetUrl, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset } from './utils/cloudProjectApi.js';
+import { downloadDriveFile, isGoogleDriveConfigured, openDrivePicker, requestDriveToken } from './utils/googleDriveMedia.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
 
@@ -501,6 +522,10 @@ const exportedUrl = ref('');
 const exportProgress = ref(0);
 const exportStatus = ref('准备导出');
 const mediaError = ref('');
+const driveToken = ref('');
+const driveBusy = ref(false);
+const driveStatus = ref(isGoogleDriveConfigured() ? 'Google Drive 未连接' : '未配置 Google Drive 环境变量');
+const mediaPool = ref([]);
 const mediaProgress = ref(0);
 const mediaEta = ref('');
 const localDraftStatus = ref('本地草稿未保存');
@@ -610,6 +635,8 @@ const media = reactive({
   audioDuration: 0,
   videoAsset: null,
   audioAsset: null,
+  videoDriveItem: null,
+  audioDriveItem: null,
 });
 
 const exportOptions = reactive({
@@ -852,6 +879,8 @@ const syncSelectedTask = () => {
   current.audioFile = media.audioFile;
   current.videoAsset = media.videoAsset;
   current.audioAsset = media.audioAsset;
+  current.videoDriveItem = media.videoDriveItem;
+  current.audioDriveItem = media.audioDriveItem;
 };
 
 const applyTaskToEditor = async (task) => {
@@ -867,6 +896,8 @@ const applyTaskToEditor = async (task) => {
   media.audioDuration = task.audioDuration || media.audioDuration;
   media.videoAsset = task.videoAsset || media.videoAsset;
   media.audioAsset = task.audioAsset || media.audioAsset;
+  media.videoDriveItem = task.videoDriveItem || media.videoDriveItem;
+  media.audioDriveItem = task.audioDriveItem || media.audioDriveItem;
   if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(cloudOwnerId.value, media.videoAsset.objectKey);
   if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(cloudOwnerId.value, media.audioAsset.objectKey);
   await nextTick();
@@ -913,6 +944,8 @@ const addTaskFromCurrent = () => {
     audioDuration: media.audioDuration,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    videoDriveItem: media.videoDriveItem,
+    audioDriveItem: media.audioDriveItem,
     exportStatus: '等待导出',
     exportProgress: 0,
   });
@@ -957,9 +990,7 @@ const clearVideoFile = () => {
   videoEl.value.load();
 };
 
-const loadMedia = async (event, kind) => {
-  const file = event.target.files?.[0];
-  event.target.value = '';
+const processMediaFile = async (file, kind) => {
   if (!file) return;
   resetMediaProgress();
   updateMediaProgress(0.02, kind === 'video' ? '读取本地实拍素材' : '读取本地音频', file.name);
@@ -1035,6 +1066,89 @@ const loadMedia = async (event, kind) => {
   scheduleLocalProjectSave();
   drawPreview();
 
+};
+
+const loadMedia = async (event, kind) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  await processMediaFile(file, kind);
+};
+
+const ensureDriveToken = async () => {
+  if (driveToken.value) return driveToken.value;
+  driveStatus.value = '等待 Google 授权...';
+  driveToken.value = await requestDriveToken({ prompt: 'consent' });
+  driveStatus.value = 'Google Drive 已连接';
+  return driveToken.value;
+};
+
+const connectGoogleDrive = async () => {
+  driveBusy.value = true;
+  try {
+    await ensureDriveToken();
+  } catch (error) {
+    console.error(error);
+    driveStatus.value = `Google Drive 连接失败：${error.message}`;
+  } finally {
+    driveBusy.value = false;
+  }
+};
+
+const mergeMediaPool = (items) => {
+  const keyed = new Map(mediaPool.value.map((item) => [`${item.provider}:${item.id}`, item]));
+  items.forEach((item) => keyed.set(`${item.provider}:${item.id}`, item));
+  mediaPool.value = Array.from(keyed.values());
+};
+
+const pickGoogleDriveMedia = async (kind) => {
+  driveBusy.value = true;
+  try {
+    const token = await ensureDriveToken();
+    const picked = await openDrivePicker({ token, kind });
+    if (picked.length) {
+      mergeMediaPool(picked);
+      driveStatus.value = `已加入 ${picked.length} 个 Google Drive ${kind === 'video' ? '视频' : '音频'}到媒体池`;
+      scheduleLocalProjectSave();
+    } else {
+      driveStatus.value = '没有选择文件';
+    }
+  } catch (error) {
+    console.error(error);
+    driveStatus.value = `选择 Google Drive 素材失败：${error.message}`;
+  } finally {
+    driveBusy.value = false;
+  }
+};
+
+const removeMediaPoolItem = (item) => {
+  mediaPool.value = mediaPool.value.filter((candidate) => !(candidate.provider === item.provider && candidate.id === item.id));
+  scheduleLocalProjectSave();
+};
+
+const useDriveMediaForCurrent = async (item) => {
+  driveBusy.value = true;
+  resetMediaProgress();
+  updateMediaProgress(0.02, '准备读取 Google Drive 素材', item.name);
+  try {
+    const token = await ensureDriveToken();
+    const file = await downloadDriveFile(item, token, (progress, status) => {
+      updateMediaProgress(0.02 + Math.min(0.68, progress * 0.68), status, item.name);
+    });
+    await processMediaFile(file, item.kind);
+    if (item.kind === 'video') media.videoDriveItem = item;
+    else media.audioDriveItem = item;
+    syncSelectedTask();
+    scheduleLocalProjectSave();
+    driveStatus.value = `已用于当前任务：${item.name}`;
+  } catch (error) {
+    console.error(error);
+    mediaProgress.value = 0;
+    mediaEta.value = '';
+    mediaError.value = `Google Drive 素材读取失败：${error.message}`;
+    driveStatus.value = mediaError.value;
+  } finally {
+    driveBusy.value = false;
+  }
 };
 const waitForMetadata = (element, timeoutMs = 30000) => new Promise((resolve) => {
   if (element.readyState >= 1 && Number.isFinite(element.duration)) {
@@ -1594,9 +1708,12 @@ const createLocalDraftPayload = () => ({
     audioDuration: media.audioDuration,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    videoDriveItem: media.videoDriveItem,
+    audioDriveItem: media.audioDriveItem,
     exportStatus: '等待导出',
     exportProgress: 0,
   },
+  mediaPool: mediaPool.value,
   savedAt: new Date().toISOString(),
 });
 
@@ -1638,6 +1755,9 @@ const restoreLocalProjectDraft = async () => {
     media.audioDuration = Number(draft.media?.audioDuration) || 0;
     media.videoAsset = draft.media?.videoAsset || null;
     media.audioAsset = draft.media?.audioAsset || null;
+    media.videoDriveItem = draft.media?.videoDriveItem || null;
+    media.audioDriveItem = draft.media?.audioDriveItem || null;
+    mediaPool.value = Array.isArray(draft.mediaPool) ? draft.mediaPool : [];
     await applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
     const savedAt = draft.savedAt ? formatCloudTime(draft.savedAt) : '';
     localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；本地视频/音频刷新后需重新选择才能预览。`;
@@ -1722,6 +1842,8 @@ const applySelectedTemplate = async () => {
     audioDuration: media.audioDuration,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    videoDriveItem: media.videoDriveItem,
+    audioDriveItem: media.audioDriveItem,
     exportStatus: '等待导出',
     exportProgress: 0,
   };
