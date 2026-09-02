@@ -85,3 +85,40 @@ export const transcodeWebmToMp4 = async (webmBlob, { fps = 30, quality = 'high',
     await instance.deleteFile(outputName).catch(() => {});
   }
 };
+export const transcodeInputVideoToMp4 = async (videoFile, { onProgress } = {}) => {
+  const instance = await getFFmpeg(onProgress);
+  const extension = videoFile.name.split('.').pop()?.toLowerCase() || 'mov';
+  const inputName = `source_${Date.now()}.${extension}`;
+  const outputName = `source_${Date.now()}.mp4`;
+
+  const progressHandler = ({ progress }) => {
+    if (Number.isFinite(progress)) onProgress?.(0.3 + Math.max(0, Math.min(0.68, progress * 0.68)), '转换实拍素材');
+  };
+
+  instance.on('progress', progressHandler);
+  try {
+    onProgress?.(0, '读取实拍素材');
+    await instance.writeFile(inputName, await fetchFile(videoFile));
+    const code = await instance.exec([
+      '-i', inputName,
+      '-map', '0:v:0',
+      '-map', '0:a?',
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '23',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-c:a', 'aac',
+      '-b:a', '160k',
+      outputName,
+    ]);
+    if (code !== 0) throw new Error(`FFmpeg exited with code ${code}`);
+    const data = await instance.readFile(outputName);
+    onProgress?.(1, '实拍素材转换完成');
+    return new File([data.buffer], videoFile.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' });
+  } finally {
+    instance.off('progress', progressHandler);
+    await instance.deleteFile(inputName).catch(() => {});
+    await instance.deleteFile(outputName).catch(() => {});
+  }
+};

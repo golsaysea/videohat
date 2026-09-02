@@ -266,7 +266,7 @@ import { useBulkStore } from './stores/bulkStore';
 import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRenderer';
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
-import { transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
+import { transcodeInputVideoToMp4, transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
 import { assetUrl, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset } from './utils/cloudProjectApi.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
@@ -636,33 +636,61 @@ const clearQueue = () => {
   selectedTaskIndex.value = 0;
 };
 
+const attachVideoFile = async (file, displayName = file.name) => {
+  const [path] = WebAssetPool.registerFiles([file]);
+  const url = WebAssetPool.getUrl(path);
+  media.videoFile = file;
+  media.videoUrl = url;
+  media.videoName = displayName;
+  videoEl.value.preload = 'metadata';
+  videoEl.value.src = url;
+  videoEl.value.loop = true;
+  videoEl.value.muted = true;
+  videoEl.value.load();
+  const result = await waitForMetadata(videoEl.value);
+  media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : 0;
+  media.videoAsset = null;
+  return result.ok && media.videoDuration && videoEl.value.videoWidth;
+};
+
+const clearVideoFile = () => {
+  media.videoFile = null;
+  media.videoUrl = '';
+  media.videoName = '';
+  media.videoDuration = 0;
+  media.videoAsset = null;
+  videoEl.value.removeAttribute('src');
+  videoEl.value.load();
+};
+
 const loadMedia = async (event, kind) => {
   const file = event.target.files?.[0];
   event.target.value = '';
   if (!file) return;
   mediaError.value = '';
-  const [path] = WebAssetPool.registerFiles([file]);
-  const url = WebAssetPool.getUrl(path);
 
   if (kind === 'video') {
-    media.videoFile = file;
-    media.videoUrl = url;
-    media.videoName = file.name;
-    videoEl.value.preload = 'metadata';
-    videoEl.value.src = url;
-    videoEl.value.loop = true;
-    videoEl.value.muted = true;
-    videoEl.value.load();
-    const result = await waitForMetadata(videoEl.value);
-    media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : 0;
-    media.videoAsset = null;
-    if (!result.ok || !media.videoDuration || !videoEl.value.videoWidth) {
-      mediaError.value = `浏览器无法解码这个视频：${file.name}。大多数是 HEVC/H.265、10-bit HDR、ProRes 或相机 MOV；请先转成 H.264 + AAC 的 MP4 后再导入。`;
-      media.videoUrl = '';
-      media.videoName = '';
-      media.videoDuration = 0;
-      videoEl.value.removeAttribute('src');
-      videoEl.value.load();
+    let loaded = await attachVideoFile(file);
+    if (!loaded) {
+      clearVideoFile();
+      mediaError.value = `浏览器正在尝试转换这个实拍素材：${file.name}`;
+      try {
+        const converted = await transcodeInputVideoToMp4(file, {
+          onProgress: (_progress, status) => {
+            mediaError.value = `${status}：${file.name}`;
+          },
+        });
+        loaded = await attachVideoFile(converted, `${file.name} -> MP4`);
+      } catch (error) {
+        console.error(error);
+        loaded = false;
+      }
+    }
+    if (!loaded) {
+      mediaError.value = `暂时无法解码这个视频：${file.name}。如果它是 iPhone HDR/HEVC 或 4K MOV，请先导出为 H.264 + AAC 的 MP4，或降低分辨率后再导入。`;
+      clearVideoFile();
+    } else {
+      mediaError.value = '';
     }
   } else {
     media.audioFile = file;
