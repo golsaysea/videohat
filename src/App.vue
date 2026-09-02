@@ -128,6 +128,15 @@
             <option v-for="template in officialTemplates" :key="template.id" :value="template.id">{{ template.title }}</option>
           </select>
           <p class="min-h-5 text-xs text-gray-500">{{ templateStatus }}</p>
+          <div v-if="templateProgress > 0 || templateBusy" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
+            <div class="flex items-center justify-between text-[11px] text-blue-100">
+              <span>模板处理</span>
+              <span>{{ Math.round(templateProgress * 100) }}%</span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded bg-black/40">
+              <div class="h-full rounded bg-blue-400 transition-all" :style="{ width: `${Math.round(templateProgress * 100)}%` }"></div>
+            </div>
+          </div>
           <button v-if="selectedTemplateId" class="w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用工程模板</button>
           <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
             <label class="space-y-1">
@@ -448,6 +457,15 @@
           <aside class="space-y-3">
             <button class="w-full rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-60" :disabled="!selectedTemplateId || templateBusy" @click="applySelectedTemplate">套用选中工程</button>
             <p class="min-h-10 text-xs leading-relaxed text-gray-500">{{ templateStatus }}</p>
+            <div v-if="templateProgress > 0 || templateBusy" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
+              <div class="flex items-center justify-between text-[11px] text-blue-100">
+                <span>模板处理进度</span>
+                <span>{{ Math.round(templateProgress * 100) }}%</span>
+              </div>
+              <div class="h-1.5 overflow-hidden rounded bg-black/40">
+                <div class="h-full rounded bg-blue-400 transition-all" :style="{ width: `${Math.round(templateProgress * 100)}%` }"></div>
+              </div>
+            </div>
             <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
               <div class="text-xs font-bold text-amber-200">管理员模板制作</div>
               <input v-model="adminToken" type="password" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="ADMIN_TOKEN" @change="persistAdminToken" />
@@ -790,6 +808,7 @@ const selectedTemplateId = ref('');
 const templateTitle = ref('官方 Reels 工程模板');
 const templateStatus = ref('读取官方工程模板中...');
 const templateBusy = ref(false);
+const templateProgress = ref(0);
 
 const exportScopeOptions = [
   { value: 'current', label: '仅当前任务' },
@@ -2357,17 +2376,20 @@ const templatePayloadFromCurrent = () => {
 
 const refreshOfficialTemplates = async () => {
   templateBusy.value = true;
-  templateStatus.value = '读取官方模板...';
+  templateProgress.value = 0.12;
+  templateStatus.value = '读取官方工程模板...';
   try {
     const { templates } = await listOfficialTemplates(isAdminMode ? adminToken.value : '');
     officialTemplates.value = templates || [];
     if (!selectedTemplateId.value && officialTemplates.value.length) selectedTemplateId.value = officialTemplates.value[0].id;
+    templateProgress.value = 1;
     templateStatus.value = officialTemplates.value.length ? `已读取 ${officialTemplates.value.length} 个模板` : '暂无官方模板';
   } catch (error) {
     console.error(error);
     templateStatus.value = `模板读取失败：${error.message}`;
   } finally {
     templateBusy.value = false;
+    if (templateProgress.value >= 1) window.setTimeout(() => { templateProgress.value = 0; }, 900);
   }
 };
 
@@ -2420,19 +2442,25 @@ const publishCurrentAsTemplate = async () => {
   persistCloudOwner();
   syncSelectedTask();
   templateBusy.value = true;
-  templateStatus.value = '上传官方音频并保存工程模板...';
+  templateProgress.value = 0.08;
+  templateStatus.value = '准备官方工程模板...';
   try {
     const projectId = currentCloudProjectId.value || selectedCloudProjectId.value || 'official-template';
     if (media.audioFile && !media.audioAsset) {
+      templateProgress.value = 0.35;
+      templateStatus.value = '上传官方音频到 R2...';
       media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'template-audio', projectId })).asset;
       syncSelectedTask();
     }
+    templateProgress.value = 0.72;
+    templateStatus.value = '保存工程参数和表格任务到 D1...';
     const { template } = await saveOfficialTemplate(cloudOwnerId.value, adminToken.value, {
       title: templateTitle.value || tasks.value[selectedTaskIndex.value]?.baseName || '官方 Reels 工程模板',
       description: `官方工程模板：${tasks.value.length} 条任务，${media.audioAsset ? '已绑定 R2 音频' : '未绑定音频'}`,
       payload: templatePayloadFromCurrent(),
       isPublished: true,
     });
+    templateProgress.value = 1;
     templateStatus.value = `已发布工程模板：${template.title}`;
     selectedTemplateId.value = template.id;
     await refreshOfficialTemplates();
@@ -2441,6 +2469,7 @@ const publishCurrentAsTemplate = async () => {
     templateStatus.value = `模板保存失败：${error.message}`;
   } finally {
     templateBusy.value = false;
+    if (templateProgress.value >= 1) window.setTimeout(() => { templateProgress.value = 0; }, 1200);
   }
 };
 

@@ -8,8 +8,13 @@
         添加列
       </button>
       <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="pasteFromClipboard">
-        粘贴表格
+        粘贴表格文案
       </button>
+      <label class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10">
+        导入表格文件
+        <input class="hidden" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" @change="importTableFile" />
+      </label>
+      <span class="text-xs text-gray-500">支持 Excel/Sheets 复制、CSV、TSV、TXT</span>
       <button class="ml-auto rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20" @click="store.clearAll()">
         清空数据
       </button>
@@ -61,23 +66,38 @@ const handleAddColumn = () => {
   if (name?.trim()) store.addColumn(name.trim());
 };
 
-const parseTsv = (text) => {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .filter((line) => line.trim())
-    .map((line) => line.split('\t'));
+const parseCsvLine = (line, delimiter) => {
+  const cells = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      i += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      cells.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current);
+  return cells;
 };
 
-const pasteFromClipboard = async () => {
-  let text = '';
-  try {
-    text = await navigator.clipboard.readText();
-  } catch (error) {
-    text = window.prompt('粘贴从 Excel 或 Google Sheets 复制的 TSV 数据', '') || '';
-  }
-  const parsedRows = parseTsv(text);
+const parseTableText = (text, fileName = '') => {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n').filter((line) => line.trim());
+  if (!lines.length) return [];
+  const delimiter = fileName.toLowerCase().endsWith('.csv') || (lines[0].includes(',') && !lines[0].includes('\t')) ? ',' : '\t';
+  return lines.map((line) => parseCsvLine(line, delimiter));
+};
+
+const applyParsedRows = (parsedRows) => {
   if (!parsedRows.length) return;
 
   const firstRow = parsedRows[0];
@@ -101,5 +121,27 @@ const pasteFromClipboard = async () => {
   store.templates.forEach((template, index) => store.autoBindTemplate(index));
   store.normalizeRows();
   store.saveDraft();
+};
+
+const pasteFromClipboard = async () => {
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (error) {
+    text = window.prompt('粘贴从 Excel 或 Google Sheets 复制的表格文案', '') || '';
+  }
+  applyParsedRows(parseTableText(text));
+};
+
+const importTableFile = async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  if (/\.xlsx?$/i.test(file.name)) {
+    window.alert('浏览器版当前请先从 Excel 导出 CSV/TSV，或直接复制表格后点“粘贴表格文案”。');
+    return;
+  }
+  const text = await file.text();
+  applyParsedRows(parseTableText(text, file.name));
 };
 </script>
