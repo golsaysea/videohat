@@ -231,6 +231,7 @@
           <Panel title="署名">
             <CheckField v-model="overlayState.signature_enabled" label="显示署名" />
             <TextField v-model="overlayState.signature_text" label="署名文字" />
+            <FontPreviewPicker v-model="overlayState.signature_font_family" label="署名字体预览" sample="@ VideoHat" />
             <SelectField v-model="overlayState.signature_align" label="署名对齐" :options="alignOptions" />
             <SelectField v-model="overlayState.signature_case" label="署名大小写" :options="caseOptions" />
             <div class="grid grid-cols-2 gap-3">
@@ -252,6 +253,7 @@
           <Panel title="正文样式">
             <SelectField v-model="overlayState.text_align" label="正文对齐" :options="alignOptions" />
             <SelectField v-model="overlayState.body_case" label="正文大小写" :options="caseOptions" />
+            <FontPreviewPicker v-model="overlayState.font_family" label="正文字体预览" sample="1. GOD WALKS WITH ME." />
             <SliderControl v-model="overlayState.fontsize" label="正文字号" :min="20" :max="140" />
             <SliderControl v-model="overlayState.font_weight" label="正文粗细" :min="100" :max="900" :step="100" />
             <SliderControl v-model="overlayState.text_width" label="折行宽度" :min="300" :max="1080" :step="10" />
@@ -273,6 +275,7 @@
           <Panel title="标题样式">
             <SelectField v-model="overlayState.scroll_title_align" label="标题对齐" :options="alignOptions" />
             <SelectField v-model="overlayState.title_case" label="标题大小写" :options="caseOptions" />
+            <FontPreviewPicker v-model="overlayState.scroll_title_font_family" label="标题字体预览" sample="IN SEPTEMBER" />
             <SliderControl v-model="overlayState.scroll_title_fontsize" label="标题字号" :min="20" :max="140" />
             <SliderControl v-model="overlayState.scroll_title_font_weight" label="标题粗细" :min="100" :max="900" :step="100" />
             <SliderControl v-model="overlayState.scroll_title_text_width" label="标题宽度" :min="300" :max="1080" :step="10" />
@@ -553,6 +556,52 @@ const CheckField = defineComponent({
   },
 });
 
+const fontPresets = [
+  { value: 'Arial', label: 'Impact Clean', sample: 'GOD WALKS WITH ME' },
+  { value: 'Arial Black', label: 'Bold Poster', sample: 'PRAYER NOW' },
+  { value: 'Georgia', label: 'Classic Serif', sample: 'Grace & Hope' },
+  { value: 'Trebuchet MS', label: 'Soft Humanist', sample: 'Beautiful Plan' },
+  { value: 'Verdana', label: 'Readable Wide', sample: 'Every Step' },
+  { value: 'Tahoma', label: 'Sharp Caption', sample: 'Stay Protected' },
+  { value: 'Impact', label: 'Viral Heavy', sample: 'BREAKING FAITH' },
+  { value: 'Courier New', label: 'Typewriter', sample: 'Psalm 91' },
+];
+
+const FontPreviewPicker = defineComponent({
+  props: { modelValue: String, label: String, sample: String },
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () => h('div', { class: 'space-y-2' }, [
+      h('div', { class: 'flex items-center justify-between' }, [
+        h('span', { class: 'text-xs text-gray-500' }, props.label),
+        h('span', { class: 'max-w-[160px] truncate text-[11px] text-cyan-300' }, props.modelValue || 'Arial'),
+      ]),
+      h('div', { class: 'grid grid-cols-2 gap-2' }, fontPresets.map((font) => {
+        const active = (props.modelValue || 'Arial') === font.value;
+        return h('button', {
+          type: 'button',
+          class: [
+            'min-h-[74px] rounded border bg-black/20 p-2 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10',
+            active ? 'border-cyan-400 ring-1 ring-cyan-400/50' : 'border-[#303648]',
+          ],
+          onClick: () => emit('update:modelValue', font.value),
+        }, [
+          h('span', { class: 'block truncate text-[11px] text-gray-500' }, font.label),
+          h('span', {
+            class: 'mt-2 block leading-tight text-white',
+            style: {
+              fontFamily: `"${font.value}", Arial, sans-serif`,
+              fontWeight: font.value === 'Georgia' || font.value === 'Courier New' ? 700 : 900,
+              fontSize: '17px',
+              letterSpacing: '0',
+            },
+          }, props.sample || font.sample),
+        ]);
+      })),
+    ]);
+  },
+});
+
 const SelectField = defineComponent({
   props: { modelValue: String, label: String, options: Array },
   emits: ['update:modelValue'],
@@ -604,6 +653,7 @@ const overlayState = reactive(createScrollOverlay({
   h: 800,
   fontsize: 64,
   font_weight: 800,
+  font_family: 'Arial Black',
   text_align: 'center',
   align: 'center',
   body_case: 'upper',
@@ -621,6 +671,7 @@ const overlayState = reactive(createScrollOverlay({
   scroll_shadow_y: 3,
   scroll_title_fontsize: 48,
   scroll_title_font_weight: 900,
+  scroll_title_font_family: 'Arial Black',
   scroll_title_align: 'center',
   title_case: 'upper',
   scroll_title_uppercase: false,
@@ -663,6 +714,7 @@ const overlayState = reactive(createScrollOverlay({
   signature_width: 900,
   signature_fontsize: 34,
   signature_font_weight: 700,
+  signature_font_family: 'Georgia',
   signature_color: '#FFFFFF',
   signature_align: 'center',
   signature_case: 'preserve',
@@ -1735,7 +1787,8 @@ const drawSignature = (ctx) => {
   const align = overlayState.signature_align || 'center';
 
   ctx.save();
-  ctx.font = `${fontWeight} ${fontSize}px Arial, sans-serif`;
+  const fontFamily = overlayState.signature_font_family || 'Arial';
+  ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}", Arial, sans-serif`;
   ctx.textBaseline = 'top';
   ctx.lineJoin = 'round';
   ctx.fillStyle = overlayState.signature_color || '#FFFFFF';
