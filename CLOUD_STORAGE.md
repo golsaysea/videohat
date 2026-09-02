@@ -31,7 +31,7 @@ D1 database: videohat-db
 ```text
 Settings -> Bindings -> Add -> R2 bucket
 Variable name: MEDIA
-R2 bucket: videohat-assets
+R2 bucket: media
 ```
 
 `MEDIA` is used because `ASSETS` is reserved in Pages.
@@ -53,7 +53,7 @@ If you have not created the resources yet, create them once:
 
 ```bash
 npx wrangler d1 create videohat-db
-npx wrangler r2 bucket create videohat-assets
+npx wrangler r2 bucket create media
 ```
 
 Copy the D1 `database_id` into `wrangler.jsonc`.

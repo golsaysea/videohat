@@ -17,6 +17,65 @@ const ok = (env, data, status = 200) => Response.json(data, jsonHeaders(env, sta
 const fail = (env, message, status = 400) => ok(env, { error: message }, status);
 const mediaBucket = (env) => env.MEDIA || env.ASSETS;
 
+const schemaStatements = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    display_name TEXT,
+    email TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_projects_owner_updated ON projects(owner_id, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    project_id TEXT,
+    kind TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    object_key TEXT NOT NULL UNIQUE,
+    content_type TEXT,
+    size INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_assets_owner_project ON assets(owner_id, project_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS templates (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    payload TEXT NOT NULL,
+    is_published INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_templates_published_updated ON templates(is_published, updated_at DESC)`,
+];
+
+const ensureDb = async (env) => {
+  if (!env.DB) throw new Error('D1 binding DB is missing. Bind videohat-db to DB in the Pages project.');
+  for (const statement of schemaStatements) {
+    await env.DB.prepare(statement).run();
+  }
+};
+
+const withDatabase = async (env, action, label = 'Database') => {
+  try {
+    await ensureDb(env);
+    return await action();
+  } catch (error) {
+    console.error(error);
+    return fail(env, `${label} error: ${error?.message || 'Unknown D1 error'}`, 500);
+  }
+};
+
 const slug = (value) => String(value || '')
   .trim()
   .toLowerCase()
@@ -76,18 +135,19 @@ const requireAdmin = (request, env) => {
   return fail(env, 'Admin token required', 401);
 };
 
-const listTemplates = async (request, env) => {
+const listTemplates = async (request, env) => withDatabase(env, async () => {
   const includeDraft = isAdminRequest(request, env);
   const sql = includeDraft
     ? `SELECT id, title, description, payload, is_published, created_by, created_at, updated_at FROM templates ORDER BY updated_at DESC LIMIT 100`
     : `SELECT id, title, description, payload, is_published, created_by, created_at, updated_at FROM templates WHERE is_published = 1 ORDER BY updated_at DESC LIMIT 100`;
   const { results } = await env.DB.prepare(sql).all();
   return ok(env, { templates: results.map((row) => sanitizeTemplate(row, includeDraft)), isAdmin: includeDraft });
-};
+}, 'Template database');
 
 const saveTemplate = async (request, env) => {
   const denied = requireAdmin(request, env);
   if (denied) return denied;
+  return withDatabase(env, async () => {
 
   const ownerId = await ownerFromRequest(request, env);
   const body = await readJson(request);
@@ -115,16 +175,19 @@ const saveTemplate = async (request, env) => {
     WHERE id = ?
   `).bind(id).first();
   return ok(env, { template: sanitizeTemplate(row, true) }, 201);
+  }, 'Template save');
 };
 
 const deleteTemplate = async (request, env, id) => {
   const denied = requireAdmin(request, env);
   if (denied) return denied;
-  await env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id).run();
-  return ok(env, { ok: true });
+  return withDatabase(env, async () => {
+    await env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id).run();
+    return ok(env, { ok: true });
+  }, 'Template delete');
 };
 
-const listProjects = async (request, env) => {
+const listProjects = async (request, env) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const { results } = await env.DB.prepare(`
     SELECT id, owner_id, title, payload, created_at, updated_at
@@ -134,9 +197,9 @@ const listProjects = async (request, env) => {
     LIMIT 100
   `).bind(ownerId).all();
   return ok(env, { projects: results.map(sanitizeProject) });
-};
+}, 'Project database');
 
-const getProject = async (request, env, id) => {
+const getProject = async (request, env, id) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const row = await env.DB.prepare(`
     SELECT id, owner_id, title, payload, created_at, updated_at
@@ -145,9 +208,9 @@ const getProject = async (request, env, id) => {
   `).bind(id, ownerId).first();
   if (!row) return fail(env, 'Project not found', 404);
   return ok(env, { project: sanitizeProject(row) });
-};
+}, 'Project database');
 
-const saveProject = async (request, env) => {
+const saveProject = async (request, env) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const body = await readJson(request);
   const id = body.id || crypto.randomUUID();
@@ -162,15 +225,15 @@ const saveProject = async (request, env) => {
   `).bind(id, ownerId, title, payload, now, now).run();
 
   return getProject(request, env, id);
-};
+}, 'Project save');
 
-const deleteProject = async (request, env, id) => {
+const deleteProject = async (request, env, id) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   await env.DB.prepare('DELETE FROM projects WHERE id = ? AND owner_id = ?').bind(id, ownerId).run();
   return ok(env, { ok: true });
-};
+}, 'Project delete');
 
-const uploadAsset = async (request, env) => {
+const uploadAsset = async (request, env) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const url = new URL(request.url);
   const fileName = url.searchParams.get('fileName') || 'asset.bin';
@@ -195,9 +258,9 @@ const uploadAsset = async (request, env) => {
   `).bind(id, ownerId, projectId, kind, fileName, objectKey, contentType, size).run();
 
   return ok(env, { asset: { id, ownerId, projectId, kind, fileName, objectKey, contentType, size } }, 201);
-};
+}, 'Asset upload');
 
-const getAsset = async (request, env) => {
+const getAsset = async (request, env) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const url = new URL(request.url);
   const key = url.searchParams.get('key');
@@ -213,7 +276,7 @@ const getAsset = async (request, env) => {
       'cache-control': 'private, max-age=3600',
     },
   });
-};
+}, 'Asset read');
 
 export default {
   async fetch(request, env) {
@@ -224,6 +287,7 @@ export default {
       const path = url.pathname.replace(/\/+$/, '') || '/';
 
       if (path === '/api/health') return ok(env, { ok: true, service: 'videohat-api' });
+      if (path === '/api/db/ensure') return withDatabase(env, async () => ok(env, { ok: true, db: true, media: Boolean(mediaBucket(env)) }), 'Database setup');
       if (path === '/api/templates' && request.method === 'GET') return listTemplates(request, env);
       if (path === '/api/templates' && request.method === 'POST') return saveTemplate(request, env);
       if (path.startsWith('/api/templates/') && request.method === 'DELETE') return deleteTemplate(request, env, decodeURIComponent(path.split('/').pop()));

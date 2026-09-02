@@ -20,7 +20,7 @@
   "r2_buckets": [
     {
       "binding": "MEDIA",
-      "bucket_name": "videohat-assets"
+      "bucket_name": "media"
     }
   ]
 }
