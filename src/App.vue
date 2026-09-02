@@ -1989,6 +1989,15 @@ const triggerDownload = (url, name) => {
   anchor.click();
 };
 
+const makeStorageSafe = (value) => JSON.parse(JSON.stringify(value, (key, item) => {
+  if (key === 'videoUrl' || key === 'audioUrl' || key === 'videoFile' || key === 'audioFile') return undefined;
+  if (typeof File !== 'undefined' && item instanceof File) return undefined;
+  if (typeof Blob !== 'undefined' && item instanceof Blob) return undefined;
+  if (item && typeof item === 'object' && typeof item.queryPermission === 'function') return undefined;
+  if (typeof item === 'function') return undefined;
+  return item;
+}));
+
 const createProjectPayload = () => ({
   version: '2.0.0-web',
   app: 'VideoKit Reels Web',
@@ -2027,12 +2036,24 @@ const createLocalDraftPayload = () => ({
 });
 
 const saveLocalProjectDraft = async () => {
+  let payload = null;
   try {
     syncSelectedTask();
-    await localforage.setItem(LOCAL_PROJECT_DRAFT_KEY, createLocalDraftPayload());
+    payload = makeStorageSafe(createLocalDraftPayload());
+    localStorage.setItem(LOCAL_PROJECT_DRAFT_KEY, JSON.stringify(payload));
+    await localforage.setItem(LOCAL_PROJECT_DRAFT_KEY, payload);
     localDraftStatus.value = `本地草稿已保存 ${new Date().toLocaleTimeString()}`;
   } catch (error) {
     console.error(error);
+    if (payload) {
+      try {
+        localStorage.setItem(LOCAL_PROJECT_DRAFT_KEY, JSON.stringify(payload));
+        localDraftStatus.value = `本地草稿已保存到备用缓存 ${new Date().toLocaleTimeString()}`;
+        return;
+      } catch (fallbackError) {
+        console.error(fallbackError);
+      }
+    }
     localDraftStatus.value = `本地草稿保存失败：${error.message}`;
   }
 };
@@ -2046,7 +2067,8 @@ const scheduleLocalProjectSave = () => {
 
 const restoreLocalProjectDraft = async () => {
   try {
-    const draft = await localforage.getItem(LOCAL_PROJECT_DRAFT_KEY);
+    const draft = await localforage.getItem(LOCAL_PROJECT_DRAFT_KEY)
+      || JSON.parse(localStorage.getItem(LOCAL_PROJECT_DRAFT_KEY) || 'null');
     if (!draft?.tasks?.length) {
       localDraftStatus.value = '本地草稿未保存';
       return;
