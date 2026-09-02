@@ -32,10 +32,12 @@ export const transcodeWebmToMp4 = async (webmBlob, { fps = 30, quality = 'high',
     await instance.writeFile(inputName, await fetchFile(webmBlob));
 
     let code = await instance.exec([
+      '-fflags', '+genpts',
       '-i', inputName,
       '-map', '0:v:0',
       '-map', '0:a?',
       '-r', String(fps || 30),
+      '-fps_mode', 'cfr',
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-crf', crf,
@@ -49,8 +51,12 @@ export const transcodeWebmToMp4 = async (webmBlob, { fps = 30, quality = 'high',
     if (code !== 0) {
       await instance.deleteFile(outputName).catch(() => {});
       code = await instance.exec([
+        '-fflags', '+genpts',
         '-i', inputName,
+        '-map', '0:v:0',
+        '-map', '0:a?',
         '-r', String(fps || 30),
+        '-fps_mode', 'cfr',
         '-c:v', 'mpeg4',
         '-b:v', videoBitrate,
         '-pix_fmt', 'yuv420p',

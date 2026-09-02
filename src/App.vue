@@ -768,8 +768,21 @@ const ensureAudioGraph = async (useSeparateAudio) => {
   }
 };
 
+const syncVideoForExport = (elapsed) => {
+  const video = videoEl.value;
+  if (!video || !media.videoUrl || !media.videoDuration) return;
+
+  const targetTime = elapsed % media.videoDuration;
+  const drift = Math.abs((video.currentTime || 0) - targetTime);
+  if (!video.seeking && (video.ended || drift > 0.45)) {
+    video.currentTime = targetTime;
+  }
+  if (video.paused || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    video.play().catch(() => {});
+  }
+};
 const supportedMime = () => {
-  const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const candidates = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
   return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || '';
 };
 
@@ -874,10 +887,7 @@ const exportCurrentTask = async () => {
     const recordProgressMax = exportOptions.format === 'mp4' ? 0.85 : 0.99;
     exportProgress.value = Math.min(recordProgressMax, (previewTime.value / duration) * recordProgressMax);
     exportStatus.value = `导出 ${formatDuration(previewTime.value)} / ${formatDuration(duration)}`;
-    if (videoEl.value && media.videoUrl && media.videoDuration && videoEl.value.ended) {
-      videoEl.value.currentTime = elapsed % media.videoDuration;
-      videoEl.value.play().catch(() => {});
-    }
+    syncVideoForExport(elapsed);
     drawPreview();
     if (elapsed >= duration) {
       if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
