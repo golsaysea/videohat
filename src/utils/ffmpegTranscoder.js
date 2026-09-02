@@ -1,7 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
-import coreURL from '@ffmpeg/core?url';
-import wasmURL from '@ffmpeg/core/wasm?url';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+
+const FFMPEG_CORE_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
 
 let ffmpeg;
 let loading;
@@ -9,8 +9,15 @@ let loading;
 const getFFmpeg = async (onProgress) => {
   if (!ffmpeg) ffmpeg = new FFmpeg();
   if (!ffmpeg.loaded) {
-    if (!loading) loading = ffmpeg.load({ coreURL, wasmURL });
-    onProgress?.(0, '加载 MP4 转码器');
+    if (!loading) {
+      onProgress?.(0, '加载 MP4 转码器');
+      loading = ffmpeg.load({
+        coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, 'application/wasm', true, ({ received, total }) => {
+          if (total > 0) onProgress?.(Math.min(0.3, (received / total) * 0.3), '下载 MP4 转码器');
+        }),
+      });
+    }
     await loading;
   }
   return ffmpeg;
@@ -24,7 +31,7 @@ export const transcodeWebmToMp4 = async (webmBlob, { fps = 30, quality = 'high',
   const videoBitrate = { high: '8M', medium: '5M', low: '2500k' }[quality] || '5M';
 
   const progressHandler = ({ progress }) => {
-    if (Number.isFinite(progress)) onProgress?.(Math.max(0, Math.min(0.98, progress)), '转码 MP4');
+    if (Number.isFinite(progress)) onProgress?.(0.3 + Math.max(0, Math.min(0.68, progress * 0.68)), '转码 MP4');
   };
 
   instance.on('progress', progressHandler);

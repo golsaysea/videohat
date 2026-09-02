@@ -862,7 +862,14 @@ const exportCurrentTask = async () => {
         ext = 'mp4';
       } catch (error) {
         console.error(error);
-        window.alert('MP4 转码失败，已自动保留 WebM 文件。大素材可能需要更长时间或更多内存。');
+        window.alert('MP4 转码失败，没有下载 WebM。你可以改选“WebM：快速导出”作为备用，或换 Chrome / Edge 再试。');
+        exportStatus.value = 'MP4 转码失败';
+        isExporting.value = false;
+        wasExporting = false;
+        stopPlayback();
+        previewTime.value = 0;
+        drawPreview();
+        return;
       }
     }
 
