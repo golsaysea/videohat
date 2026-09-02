@@ -15,6 +15,7 @@
             <div class="h-full rounded-full bg-blue-500 transition-all" :style="{ width: `${Math.round(exportProgress * 100)}%` }"></div>
           </div>
         </div>
+        <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showTemplateLibrary = true">工程模板库</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showBulkModal = true">批量表格</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="downloadProject">保存工程 JSON</button>
         <button class="rounded bg-blue-600 px-5 py-1.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500" :disabled="isExporting" @click="openExportDialog('current')">
@@ -119,22 +120,22 @@
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
           <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">官方模板</h3>
+            <h3 class="m-0 text-sm font-bold text-cyan-300">官方工程模板</h3>
             <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="templateBusy" @click="refreshOfficialTemplates">刷新</button>
           </div>
           <select v-model="selectedTemplateId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
-            <option value="">选择模板</option>
+            <option value="">选择工程模板</option>
             <option v-for="template in officialTemplates" :key="template.id" :value="template.id">{{ template.title }}</option>
           </select>
           <p class="min-h-5 text-xs text-gray-500">{{ templateStatus }}</p>
-          <button v-if="selectedTemplateId" class="w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用模板参数</button>
+          <button v-if="selectedTemplateId" class="w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用工程模板</button>
           <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
             <label class="space-y-1">
               <span class="block text-xs text-amber-200">管理员 Token</span>
               <input v-model="adminToken" type="password" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="Cloudflare ADMIN_TOKEN" @change="persistAdminToken" />
             </label>
-            <input v-model="templateTitle" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="模板名称" />
-            <button class="w-full rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-400/20" :disabled="templateBusy || !adminToken" @click="publishCurrentAsTemplate">保存为官方模板</button>
+            <input v-model="templateTitle" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="模板名称，例如：祷告主题-中文文案-001" />
+            <button class="w-full rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-400/20" :disabled="templateBusy || !adminToken" @click="publishCurrentAsTemplate">上传音频并保存工程模板</button>
           </div>
         </div>
 
@@ -417,6 +418,44 @@
         </div>
       </div>
     </div>
+    <div v-if="showTemplateLibrary" class="fixed inset-0 z-50 flex items-center justify-center bg-[#05070d]/90 p-6 backdrop-blur">
+      <div class="flex max-h-[90vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded border border-[#343b4f] bg-[#111522] shadow-2xl">
+        <div class="flex items-center justify-between border-b border-[#2a2f3a] bg-[#171b2b] px-5 py-4">
+          <div>
+            <h2 class="m-0 text-lg font-bold text-cyan-300">官方工程模板库</h2>
+            <p class="mt-1 text-xs text-gray-500">管理员保存音频、文案和参数；使用者只替换自己的实拍视频。</p>
+          </div>
+          <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-1.5 text-sm text-gray-200 hover:bg-[#2b3146]" @click="showTemplateLibrary = false">关闭</button>
+        </div>
+        <div class="grid min-h-0 flex-1 grid-cols-[1fr_280px] gap-4 overflow-y-auto p-5">
+          <section class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="m-0 text-sm font-bold text-white">选择工程</h3>
+              <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="templateBusy" @click="refreshOfficialTemplates">刷新</button>
+            </div>
+            <div v-if="officialTemplates.length" class="space-y-2">
+              <button v-for="template in officialTemplates" :key="template.id" class="w-full rounded border p-3 text-left transition" :class="selectedTemplateId === template.id ? 'border-cyan-500 bg-cyan-500/10' : 'border-[#2a2f3a] bg-black/20 hover:border-[#465066]'" @click="selectedTemplateId = template.id">
+                <span class="block truncate text-sm font-semibold text-white">{{ template.title }}</span>
+                <span class="mt-1 block truncate text-xs text-gray-500">{{ template.description || '官方工程模板' }}</span>
+                <span class="mt-1 block text-[11px] text-gray-600">{{ formatCloudTime(template.updatedAt) }}</span>
+              </button>
+            </div>
+            <div v-else class="rounded border border-dashed border-[#343b4f] p-8 text-center text-sm text-gray-500">暂无工程模板</div>
+          </section>
+          <aside class="space-y-3">
+            <button class="w-full rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-60" :disabled="!selectedTemplateId || templateBusy" @click="applySelectedTemplate">套用选中工程</button>
+            <p class="min-h-10 text-xs leading-relaxed text-gray-500">{{ templateStatus }}</p>
+            <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
+              <div class="text-xs font-bold text-amber-200">管理员模板制作</div>
+              <input v-model="adminToken" type="password" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="ADMIN_TOKEN" @change="persistAdminToken" />
+              <input v-model="templateTitle" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="模板名称/中文文件名" />
+              <button class="w-full rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-400/20 disabled:opacity-60" :disabled="templateBusy || !adminToken" @click="publishCurrentAsTemplate">上传音频并保存工程模板</button>
+            </div>
+            <div v-else class="rounded border border-[#2a2f3a] bg-black/20 p-3 text-xs leading-relaxed text-gray-500">管理员入口：网址后加 <span class="font-mono text-gray-300">?admin=1</span>，输入 Cloudflare 的 ADMIN_TOKEN 后保存模板。</div>
+          </aside>
+        </div>
+      </div>
+    </div>
     <BulkModal v-if="showBulkModal" :template-overlay="overlayState" @close="showBulkModal = false" @generate="handleGeneratedTasks" />
   </div>
 </template>
@@ -529,7 +568,10 @@ const store = useBulkStore();
 const previewCanvas = ref(null);
 const videoEl = ref(null);
 const audioEl = ref(null);
+const videoFileInput = ref(null);
+const audioFileInput = ref(null);
 const showBulkModal = ref(false);
+const showTemplateLibrary = ref(false);
 const showExportModal = ref(false);
 const exportDialogMode = ref('current');
 const exportJobs = ref([]);
@@ -693,8 +735,8 @@ const isAdminMode = new URLSearchParams(window.location.search).get('admin') ===
 const adminToken = ref(localStorage.getItem('videohat_admin_token') || '');
 const officialTemplates = ref([]);
 const selectedTemplateId = ref('');
-const templateTitle = ref('官方 Reels 模板');
-const templateStatus = ref('读取官方模板中...');
+const templateTitle = ref('官方 Reels 工程模板');
+const templateStatus = ref('读取官方工程模板中...');
 const templateBusy = ref(false);
 
 const exportScopeOptions = [
@@ -1233,8 +1275,8 @@ const applyTaskToEditor = async (task) => {
   media.audioAsset = task.audioAsset || media.audioAsset;
   media.videoDriveItem = task.videoDriveItem || media.videoDriveItem;
   media.audioDriveItem = task.audioDriveItem || media.audioDriveItem;
-  if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(cloudOwnerId.value, media.videoAsset.objectKey);
-  if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(cloudOwnerId.value, media.audioAsset.objectKey);
+  if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(media.videoAsset.ownerId || cloudOwnerId.value, media.videoAsset.objectKey);
+  if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(media.audioAsset.ownerId || cloudOwnerId.value, media.audioAsset.objectKey);
   if ((!media.videoUrl && media.videoName) || (!media.audioUrl && media.audioName)) await hydrateTaskMediaFromLocalFolder(task);
   await nextTick();
   if (videoEl.value && media.videoUrl) {
@@ -2242,18 +2284,20 @@ const persistAdminToken = () => {
 };
 
 const templatePayloadFromCurrent = () => {
+  syncSelectedTask();
   const payload = createProjectPayload();
   return {
     ...payload,
-    assets: {},
+    kind: 'official-project-template',
+    assets: {
+      audio: media.audioAsset || null,
+    },
     tasks: payload.tasks.map((task) => ({
       ...task,
       videoName: '',
-      audioName: '',
       videoDuration: 0,
-      audioDuration: 0,
       videoAsset: null,
-      audioAsset: null,
+      videoDriveItem: null,
     })),
   };
 };
@@ -2277,46 +2321,66 @@ const refreshOfficialTemplates = async () => {
 const applySelectedTemplate = async () => {
   const template = officialTemplates.value.find((item) => item.id === selectedTemplateId.value);
   if (!template?.payload) return;
-  Object.assign(exportOptions, template.payload.exportOptions || {});
-  const templateTasks = template.payload.tasks?.length ? template.payload.tasks : [{ ...tasks.value[0], overlays: [template.payload.overlay || overlayState] }];
-  const inheritedMedia = {
-    videoUrl: media.videoUrl,
-    audioUrl: media.audioUrl,
-    videoName: media.videoName,
-    audioName: media.audioName,
-    videoDuration: media.videoDuration,
-    audioDuration: media.audioDuration,
-    videoAsset: media.videoAsset,
-    audioAsset: media.audioAsset,
-    videoDriveItem: media.videoDriveItem,
-    audioDriveItem: media.audioDriveItem,
-    exportStatus: '等待导出',
-    exportProgress: 0,
-  };
-  tasks.value = templateTasks.map((task, index) => ({
-    ...task,
-    ...inheritedMedia,
-    id: `template_${Date.now()}_${index}`,
-    baseName: task.baseName || `${template.title} ${index + 1}`,
-  }));
-  selectedTaskIndex.value = 0;
-  await applyTaskToEditor(tasks.value[0]);
-  templateStatus.value = `已套用：${template.title}`;
+  templateBusy.value = true;
+  templateStatus.value = `套用工程模板：${template.title}`;
+  try {
+    const currentVideo = {
+      videoFile: media.videoFile,
+      videoUrl: media.videoUrl,
+      videoName: media.videoName,
+      videoDuration: media.videoDuration,
+      videoAsset: media.videoAsset,
+      videoDriveItem: media.videoDriveItem,
+    };
+    Object.assign(exportOptions, template.payload.exportOptions || {});
+    const templateTasks = template.payload.tasks?.length ? template.payload.tasks : [{ ...tasks.value[0], overlays: [template.payload.overlay || overlayState] }];
+    const templateAudio = template.payload.assets?.audio || templateTasks.find((task) => task.audioAsset)?.audioAsset || null;
+    tasks.value = templateTasks.map((task, index) => ({
+      ...task,
+      ...currentVideo,
+      audioAsset: task.audioAsset || templateAudio || null,
+      audioName: task.audioName || templateAudio?.fileName || '',
+      audioDuration: task.audioDuration || 0,
+      audioUrl: '',
+      audioFile: null,
+      audioDriveItem: null,
+      id: `template_${Date.now()}_${index}`,
+      baseName: task.baseName || `${template.title} ${index + 1}`,
+      exportStatus: '等待导出',
+      exportProgress: 0,
+    }));
+    selectedTaskIndex.value = 0;
+    await applyTaskToEditor(tasks.value[0]);
+    syncSelectedTask();
+    scheduleLocalProjectSave();
+    templateStatus.value = `已套用工程模板：${template.title}。请替换/选择自己的实拍视频后导出。`;
+  } catch (error) {
+    console.error(error);
+    templateStatus.value = `模板套用失败：${error.message}`;
+  } finally {
+    templateBusy.value = false;
+  }
 };
 
 const publishCurrentAsTemplate = async () => {
   persistAdminToken();
+  persistCloudOwner();
   syncSelectedTask();
   templateBusy.value = true;
-  templateStatus.value = '保存官方模板...';
+  templateStatus.value = '上传官方音频并保存工程模板...';
   try {
+    const projectId = currentCloudProjectId.value || selectedCloudProjectId.value || 'official-template';
+    if (media.audioFile && !media.audioAsset) {
+      media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'template-audio', projectId })).asset;
+      syncSelectedTask();
+    }
     const { template } = await saveOfficialTemplate(cloudOwnerId.value, adminToken.value, {
-      title: templateTitle.value || tasks.value[selectedTaskIndex.value]?.baseName || '官方 Reels 模板',
-      description: 'VideoHat 官方模板',
+      title: templateTitle.value || tasks.value[selectedTaskIndex.value]?.baseName || '官方 Reels 工程模板',
+      description: `官方工程模板：${tasks.value.length} 条任务，${media.audioAsset ? '已绑定 R2 音频' : '未绑定音频'}`,
       payload: templatePayloadFromCurrent(),
       isPublished: true,
     });
-    templateStatus.value = `已发布：${template.title}`;
+    templateStatus.value = `已发布工程模板：${template.title}`;
     selectedTemplateId.value = template.id;
     await refreshOfficialTemplates();
   } catch (error) {
@@ -2400,8 +2464,8 @@ const loadSelectedCloudProject = async () => {
   tasks.value = project.payload.tasks || tasks.value;
   media.videoAsset = project.payload.assets?.video || tasks.value[0]?.videoAsset || null;
   media.audioAsset = project.payload.assets?.audio || tasks.value[0]?.audioAsset || null;
-  media.videoUrl = media.videoAsset?.objectKey ? assetUrl(cloudOwnerId.value, media.videoAsset.objectKey) : '';
-  media.audioUrl = media.audioAsset?.objectKey ? assetUrl(cloudOwnerId.value, media.audioAsset.objectKey) : '';
+  media.videoUrl = media.videoAsset?.objectKey ? assetUrl(media.videoAsset.ownerId || cloudOwnerId.value, media.videoAsset.objectKey) : '';
+  media.audioUrl = media.audioAsset?.objectKey ? assetUrl(media.audioAsset.ownerId || cloudOwnerId.value, media.audioAsset.objectKey) : '';
   selectedTaskIndex.value = 0;
   await applyTaskToEditor(tasks.value[0]);
   cloudStatus.value = `已加载：${project.title}`;
