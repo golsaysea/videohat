@@ -33,7 +33,7 @@
           <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
             <span class="block font-semibold">上传背景视频</span>
             <span class="mt-1 block text-xs text-gray-500">长视频自动裁剪，短视频自动循环</span>
-            <input class="hidden" type="file" accept="video/*" @change="event => loadMedia(event, 'video')" />
+            <input class="hidden" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.quicktime" @change="event => loadMedia(event, 'video')" />
           </label>
           <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
             <span class="block font-semibold">上传音频</span>
@@ -142,9 +142,26 @@
             <NumberField v-if="exportOptions.durationMode === 'custom'" v-model="exportOptions.customDuration" label="自定义秒数" :min="1" />
             <SelectField v-model="exportOptions.fitMode" label="视频匹配" :options="fitModeOptions" />
             <SelectField v-model="exportOptions.previewScale" label="预览性能" :options="previewScaleOptions" />
-            <SelectField v-model="exportOptions.quality" label="导出画质" :options="qualityOptions" />
+            <SelectField v-model="exportOptions.engine" label="渲染引擎" :options="engineOptions" />
             <SelectField v-model="exportOptions.format" label="导出格式" :options="formatOptions" />
-            <NumberField v-model="exportOptions.fps" label="帧率" :min="15" :max="60" />
+            <SelectField v-model="exportOptions.quality" label="导出画质" :options="qualityOptions" />
+            <SelectField v-model="exportOptions.resolution" label="导出分辨率" :options="resolutionOptions" />
+            <div v-if="exportOptions.resolution === 'custom'" class="grid grid-cols-2 gap-3">
+              <NumberField v-model="exportOptions.customWidth" label="宽" :min="240" />
+              <NumberField v-model="exportOptions.customHeight" label="高" :min="240" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="exportOptions.fps" label="帧率" :min="15" :max="60" />
+              <NumberField v-model="exportOptions.customBitrate" label="目标 Mbps" :min="1" />
+            </div>
+            <SelectField v-model="exportOptions.namingMode" label="命名策略" :options="namingModeOptions" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="exportOptions.concurrency" label="并发" :min="1" :max="4" />
+              <NumberField v-model="exportOptions.recycleEvery" label="每 N 条续跑" :min="0" />
+            </div>
+            <CheckField v-model="exportOptions.useGpu" label="GPU/硬件编码（后端）" />
+            <CheckField v-model="exportOptions.useMemoryDecoder" label="极速内存解码" />
+            <CheckField v-model="exportOptions.fastAlphaMode" label="极速贴合模式" />
           </Panel>
 
           <Panel title="字幕内容">
@@ -505,9 +522,21 @@ const exportOptions = reactive({
   durationMode: 'auto',
   customDuration: 15,
   fitMode: 'cover',
-  quality: 'high',
-  format: 'mp4',
+  quality: 'ultrafast',
+  format: 'webm',
+  engine: 'local-fast',
+  resolution: '1080x1920',
+  customWidth: 1080,
+  customHeight: 1920,
   fps: 30,
+  customBitrate: 5,
+  maxBitrate: 7,
+  namingMode: 'date-auto',
+  concurrency: 1,
+  recycleEvery: 0,
+  useGpu: true,
+  useMemoryDecoder: true,
+  fastAlphaMode: true,
   previewScale: '0.5',
 });
 
@@ -537,14 +566,39 @@ const fitModeOptions = [
   { value: 'contain', label: '完整留边' },
   { value: 'stretch', label: '拉伸填满' },
 ];
+const engineOptions = [
+  { value: 'local-fast', label: '本地极速预览导出' },
+  { value: 'precise', label: '精确合成（浏览器）' },
+  { value: 'pipeline', label: '流水线导出（后端）' },
+  { value: 'hardware', label: '硬件 H.264（后端）' },
+];
 const qualityOptions = [
-  { value: 'high', label: '高画质 8 Mbps' },
-  { value: 'medium', label: '中画质 5 Mbps' },
+  { value: 'ultrafast', label: '极速 2 Mbps' },
   { value: 'low', label: '快速 2.5 Mbps' },
+  { value: 'medium', label: '中画质 5 Mbps' },
+  { value: 'high', label: '高画质 8 Mbps' },
+  { value: 'custom', label: '自定义码率' },
 ];
 const formatOptions = [
-  { value: 'mp4', label: 'MP4：发帖兼容' },
-  { value: 'webm', label: 'WebM：快速导出' },
+  { value: 'webm', label: 'WebM：本地最快' },
+  { value: 'mp4', label: 'MP4：浏览器慢转码' },
+  { value: 'backend-mp4', label: 'MP4：后端/GPU' },
+  { value: 'png-layers', label: 'PNG 分层' },
+  { value: 'fcpxml', label: 'FCPXML' },
+];
+const resolutionOptions = [
+  { value: '1080x1920', label: 'Reels 1080 x 1920' },
+  { value: '1920x1080', label: '横屏 1920 x 1080' },
+  { value: '800x1000', label: '口播 800 x 1000' },
+  { value: 'custom', label: '自定义' },
+];
+const namingModeOptions = [
+  { value: 'date-auto', label: '日期自动' },
+  { value: 'text', label: '正文开头' },
+  { value: 'background', label: '视频名' },
+  { value: 'audio', label: '音频名' },
+  { value: 'index', label: '序号' },
+  { value: 'custom', label: '任务名' },
 ];
 const previewScaleOptions = [
   { value: '0.5', label: '最高流畅 540p' },
@@ -681,8 +735,23 @@ const applyTaskToEditor = async (task) => {
   if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(cloudOwnerId.value, media.videoAsset.objectKey);
   if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(cloudOwnerId.value, media.audioAsset.objectKey);
   await nextTick();
-  if (videoEl.value && media.videoUrl) videoEl.value.src = media.videoUrl;
-  if (audioEl.value && media.audioUrl) audioEl.value.src = media.audioUrl;
+  if (videoEl.value && media.videoUrl) {
+    videoEl.value.preload = 'auto';
+    videoEl.value.src = media.videoUrl;
+    videoEl.value.loop = true;
+    videoEl.value.muted = true;
+    videoEl.value.load();
+    await waitForMetadata(videoEl.value);
+    media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : media.videoDuration;
+    await waitForVideoFrameReady(videoEl.value, 15000);
+  }
+  if (audioEl.value && media.audioUrl) {
+    audioEl.value.preload = 'metadata';
+    audioEl.value.src = media.audioUrl;
+    audioEl.value.load();
+    await waitForMetadata(audioEl.value);
+    media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : media.audioDuration;
+  }
   previewTime.value = 0;
   drawPreview();
 };
@@ -723,15 +792,20 @@ const attachVideoFile = async (file, displayName = file.name) => {
   media.videoFile = file;
   media.videoUrl = url;
   media.videoName = displayName;
-  videoEl.value.preload = 'metadata';
+  videoEl.value.preload = 'auto';
   videoEl.value.src = url;
   videoEl.value.loop = true;
   videoEl.value.muted = true;
   videoEl.value.load();
   const result = await waitForMetadata(videoEl.value);
   media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : 0;
+  if (result.ok && media.videoDuration && videoEl.value.videoWidth) {
+    const frameReady = await waitForVideoFrameReady(videoEl.value);
+    media.videoAsset = null;
+    return frameReady.ok;
+  }
   media.videoAsset = null;
-  return result.ok && media.videoDuration && videoEl.value.videoWidth;
+  return false;
 };
 
 const clearVideoFile = () => {
@@ -832,6 +906,44 @@ const waitForMetadata = (element, timeoutMs = 30000) => new Promise((resolve) =>
   element.onloadedmetadata = () => finish({ ok: true });
   element.onerror = () => finish({ ok: false, reason: 'decode' });
 });
+
+const waitForVideoFrameReady = (video, timeoutMs = 30000) => new Promise((resolve) => {
+  if (!video) {
+    resolve({ ok: false, reason: 'missing-video' });
+    return;
+  }
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth) {
+    resolve({ ok: true });
+    return;
+  }
+
+  let settled = false;
+  let timer = 0;
+  let frameHandle = 0;
+  const finish = (result) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    video.onloadeddata = null;
+    video.oncanplay = null;
+    video.onseeked = null;
+    video.onerror = null;
+    if (frameHandle && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(frameHandle);
+    resolve(result);
+  };
+  const ready = () => {
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth) finish({ ok: true });
+  };
+
+  timer = window.setTimeout(() => finish({ ok: false, reason: 'timeout' }), timeoutMs);
+  video.onloadeddata = ready;
+  video.oncanplay = ready;
+  video.onseeked = ready;
+  video.onerror = () => finish({ ok: false, reason: 'decode' });
+  if (video.requestVideoFrameCallback) frameHandle = video.requestVideoFrameCallback(() => finish({ ok: true }));
+});
+
+const waitForNextPaint = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 const drawVideoBackground = (ctx, canvas, video) => {
   if (!video || !media.videoUrl || !video.videoWidth || !video.videoHeight) {
@@ -1070,7 +1182,38 @@ const supportedMime = () => {
   return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || '';
 };
 
-const bitrateForQuality = () => ({ high: 8000000, medium: 5000000, low: 2500000 }[exportOptions.quality] || 5000000);
+const browserUnsupportedFormats = new Set(['backend-mp4', 'png-layers', 'fcpxml']);
+const backendOnlyEngines = new Set(['pipeline', 'hardware']);
+const bitrateForQuality = () => {
+  if (exportOptions.quality === 'custom') return Math.max(1, Number(exportOptions.customBitrate) || 5) * 1000000;
+  return ({ high: 8000000, medium: 5000000, low: 2500000, ultrafast: 2000000 }[exportOptions.quality] || 5000000);
+};
+
+const needsBackendExporter = () => (
+  browserUnsupportedFormats.has(exportOptions.format)
+  || backendOnlyEngines.has(exportOptions.engine)
+  || exportOptions.resolution !== '1080x1920'
+);
+
+const safeFilePart = (value, fallback = 'reels') => String(value || fallback)
+  .trim()
+  .slice(0, 60)
+  .replace(/[\\/:*?"<>|]+/g, '-')
+  .replace(/\s+/g, '-');
+
+const exportFileName = (ext) => {
+  const task = tasks.value[selectedTaskIndex.value] || {};
+  const mode = exportOptions.namingMode || 'date-auto';
+  const base = {
+    custom: task.baseName,
+    text: overlayState.content.split(/\r?\n/).find(Boolean),
+    background: media.videoName,
+    audio: media.audioName,
+    index: `reels-${selectedTaskIndex.value + 1}`,
+    'date-auto': `${task.baseName || 'reels'}-${Date.now()}`,
+  }[mode] || `${task.baseName || 'reels'}-${Date.now()}`;
+  return `${safeFilePart(base)}.${ext}`;
+};
 
 const exportCurrentTask = async () => {
   if (isExporting.value) return;
@@ -1078,6 +1221,14 @@ const exportCurrentTask = async () => {
   if (!canvas) return;
   if (!media.videoUrl && !overlayState.content.trim()) {
     window.alert('请先上传视频或填写字幕内容');
+    return;
+  }
+  if (needsBackendExporter()) {
+    exportStatus.value = '等待后端导出服务';
+    window.alert('这个导出模式需要后端 FFmpeg/GPU 服务。当前浏览器本地请先选：渲染引擎=本地极速预览导出，导出格式=WebM：本地最快，分辨率=Reels 1080 x 1920。');
+    return;
+  }
+  if (exportOptions.format === 'mp4' && !window.confirm('浏览器 MP4 会先录 WebM 再用 ffmpeg.wasm 转码，可能要等几分钟。要继续吗？\n\n想最快出片请改选 WebM：本地最快。')) {
     return;
   }
 
@@ -1104,8 +1255,22 @@ const exportCurrentTask = async () => {
     audioEl.value.currentTime = 0;
     await audioEl.value.play().catch(() => {});
   }
+  if (videoEl.value && media.videoUrl) {
+    exportStatus.value = '等待视频帧';
+    const frameReady = await waitForVideoFrameReady(videoEl.value, 15000);
+    if (!frameReady.ok) {
+      window.alert('视频素材还没解码出第一帧，已停止导出。请重新上传 H.264 MP4，或先用“WebM：本地最快”测试预览。');
+      exportStatus.value = '视频帧未就绪';
+      isExporting.value = false;
+      wasExporting = false;
+      stopPlayback();
+      drawPreview();
+      return;
+    }
+  }
 
   drawPreview({ fullResolution: true });
+  await waitForNextPaint();
   const stream = canvas.captureStream(exportOptions.fps || 30);
   if (mediaDestination?.stream.getAudioTracks().length) {
     stream.addTrack(mediaDestination.stream.getAudioTracks()[0]);
@@ -1146,7 +1311,7 @@ const exportCurrentTask = async () => {
         ext = 'mp4';
       } catch (error) {
         console.error(error);
-        window.alert('MP4 转码失败，没有下载 WebM。你可以改选“WebM：快速导出”作为备用，或换 Chrome / Edge 再试。');
+        window.alert('MP4 转码失败，没有下载 WebM。你可以改选“WebM：本地最快”作为备用，或换 Chrome / Edge 再试。');
         exportStatus.value = 'MP4 转码失败';
         isExporting.value = false;
         wasExporting = false;
@@ -1159,7 +1324,7 @@ const exportCurrentTask = async () => {
 
     const url = URL.createObjectURL(outputBlob);
     exportedUrl.value = url;
-    triggerDownload(url, `${tasks.value[selectedTaskIndex.value]?.baseName || 'reels'}_${Date.now()}.${ext}`);
+    triggerDownload(url, exportFileName(ext));
     exportProgress.value = 1;
     exportStatus.value = `已导出 ${ext.toUpperCase()}`;
     isExporting.value = false;
@@ -1175,7 +1340,7 @@ const exportCurrentTask = async () => {
     if (!isExporting.value) return;
     const elapsed = (performance.now() - startedAt) / 1000;
     previewTime.value = Math.min(elapsed, duration);
-    const recordProgressMax = exportOptions.format === 'mp4' ? 0.85 : 0.99;
+    const recordProgressMax = exportOptions.format === 'mp4' ? 0.82 : 0.99;
     exportProgress.value = Math.min(recordProgressMax, (previewTime.value / duration) * recordProgressMax);
     exportStatus.value = `导出 ${formatDuration(previewTime.value)} / ${formatDuration(duration)}`;
     syncVideoForExport(elapsed);
