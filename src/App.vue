@@ -30,16 +30,16 @@
         </div>
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
+          <button type="button" class="block w-full rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-left text-sm text-gray-300 transition hover:border-blue-500 hover:text-white" @click="chooseLocalMedia('video')">
             <span class="block font-semibold">选择本地实拍视频</span>
-            <span class="mt-1 block text-xs text-gray-500">授权素材路径后，会优先读取旁边已转换 MP4</span>
-            <input class="hidden" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.quicktime" @change="event => loadMedia(event, 'video')" />
-          </label>
-          <label class="block rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white">
+            <span class="mt-1 block text-xs text-gray-500">优先保存文件授权，刷新后可重新读取 MP4</span>
+          </button>
+          <button type="button" class="block w-full rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-left text-sm text-gray-300 transition hover:border-blue-500 hover:text-white" @click="chooseLocalMedia('audio')">
             <span class="block font-semibold">上传音频</span>
             <span class="mt-1 block text-xs text-gray-500">有音频时默认按音频时长导出</span>
-            <input class="hidden" type="file" accept="audio/*" @change="event => loadMedia(event, 'audio')" />
-          </label>
+          </button>
+          <input ref="videoFileInput" class="hidden" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.quicktime" @change="event => loadMedia(event, 'video')" />
+          <input ref="audioFileInput" class="hidden" type="file" accept="audio/*" @change="event => loadMedia(event, 'audio')" />
           <div class="grid grid-cols-2 gap-2 text-xs text-gray-400">
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">视频：{{ formatDuration(media.videoDuration) }}</div>
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">音频：{{ formatDuration(media.audioDuration) }}</div>
@@ -815,6 +815,7 @@ const AUTO_TRANSCODE_WARN_BYTES = 80 * 1024 * 1024;
 const AUTO_TRANSCODE_LIMIT_BYTES = 220 * 1024 * 1024;
 const LOCAL_PROJECT_DRAFT_KEY = 'videohat_reels_local_project_v1';
 const LOCAL_MEDIA_DIR_HANDLE_KEY = 'videohat_local_media_dir_handle_v1';
+const LOCAL_MEDIA_FILE_HANDLES_KEY = 'videohat_local_media_file_handles_v1';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '未知大小';
@@ -847,6 +848,7 @@ const updateMediaProgress = (progress, status, fileName = '') => {
 };
 
 let localMediaDirectoryHandle = null;
+let localMediaFileHandles = { video: null, audio: null };
 const videoExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm', '.quicktime']);
 const audioExtensions = new Set(['.mp3', '.m4a', '.wav', '.aac', '.ogg']);
 const cacheSuffix = '.videohat-preview.mp4';
@@ -859,6 +861,29 @@ const fileExtension = (name) => {
 const cacheNameFor = (name) => String(name || 'video').replace(/\.[^.]+$/, '') + cacheSuffix;
 
 const isPreviewCacheName = (name) => String(name || '').endsWith(cacheSuffix);
+
+const ensureFileHandlePermission = async (handle, mode = 'read') => {
+  if (!handle) return false;
+  const options = { mode };
+  if ((await handle.queryPermission(options)) === 'granted') return true;
+  return (await handle.requestPermission(options)) === 'granted';
+};
+
+const loadLocalMediaFileHandles = async () => {
+  localMediaFileHandles = await localforage.getItem(LOCAL_MEDIA_FILE_HANDLES_KEY)
+    || { video: null, audio: null };
+};
+
+const saveLocalMediaFileHandle = async (kind, handle) => {
+  if (!handle) return;
+  localMediaFileHandles = {
+    ...localMediaFileHandles,
+    [kind]: { name: handle.name, handle },
+  };
+  await localforage.setItem(LOCAL_MEDIA_FILE_HANDLES_KEY, localMediaFileHandles).catch((error) => {
+    console.warn('[local media handle] save failed', error);
+  });
+};
 
 const ensureLocalFolderPermission = async (mode = 'readwrite') => {
   if (!localMediaDirectoryHandle) throw new Error('请先选择素材文件夹');
@@ -1132,14 +1157,30 @@ const findLocalItemForTask = (name, kind) => {
 };
 
 const hydrateNamedLocalMedia = async (name, kind) => {
-  if (!name || !localMediaDirectoryHandle) return false;
+  if (!name) return false;
+  const normalized = normalizeOriginalMediaName(name);
+  const saved = localMediaFileHandles?.[kind];
+  if (saved?.handle && normalizeOriginalMediaName(saved.name) === normalized) {
+    const granted = await ensureFileHandlePermission(saved.handle, 'read').catch(() => false);
+    if (granted) {
+      const file = await saved.handle.getFile();
+      await processMediaFile(file, kind, {
+        displayName: file.name,
+        sourceName: file.name,
+        persistentFileHandle: true,
+      });
+      return true;
+    }
+    localDraftStatus.value = '已找到本地文件授权记录，但浏览器需要你重新点一次选择文件。';
+  }
+
+  if (!localMediaDirectoryHandle) return false;
   const item = findLocalItemForTask(name, kind);
   if (item) {
     await useLocalMediaForCurrent(item);
     return true;
   }
 
-  const normalized = normalizeOriginalMediaName(name);
   const candidates = kind === 'video' ? [cacheNameFor(normalized), normalized] : [normalized];
   for (const fileName of candidates) {
     const file = await readFileFromLocalFolder(fileName);
@@ -1155,7 +1196,7 @@ const hydrateNamedLocalMedia = async (name, kind) => {
 };
 
 const hydrateTaskMediaFromLocalFolder = async (task) => {
-  if (!localMediaDirectoryHandle || !task) return;
+  if (!task) return;
   if (!task.videoUrl && task.videoName) await hydrateNamedLocalMedia(task.videoName, 'video');
   if (!task.audioUrl && task.audioName) await hydrateNamedLocalMedia(task.audioName, 'audio');
 };
@@ -1221,7 +1262,7 @@ const applyTaskToEditor = async (task) => {
 
 const rehydrateSelectedTaskMediaFromLocalFolder = async () => {
   const task = tasks.value[selectedTaskIndex.value];
-  if (!task || !localMediaDirectoryHandle) return false;
+  if (!task) return false;
   const hadVideo = Boolean(media.videoUrl);
   const hadAudio = Boolean(media.audioUrl);
   await hydrateTaskMediaFromLocalFolder(task);
@@ -1415,6 +1456,35 @@ const processMediaFile = async (file, kind, options = {}) => {
   scheduleLocalProjectSave();
   drawPreview();
 
+};
+
+const chooseLocalMedia = async (kind) => {
+  const input = kind === 'video' ? videoFileInput.value : audioFileInput.value;
+  if (!window.showOpenFilePicker) {
+    input?.click();
+    return;
+  }
+
+  try {
+    const accept = kind === 'video'
+      ? { 'video/*': ['.mp4', '.mov', '.m4v', '.webm'] }
+      : { 'audio/*': ['.mp3', '.m4a', '.wav', '.aac', '.ogg'] };
+    const [handle] = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: kind === 'video' ? 'VideoHat 视频素材' : 'VideoHat 音频素材', accept }],
+    });
+    if (!handle) return;
+    await saveLocalMediaFileHandle(kind, handle);
+    const file = await handle.getFile();
+    if (kind === 'video') await ensureLocalFolderForSelectedVideo(file);
+    await processMediaFile(file, kind, { sourceName: file.name, persistentFileHandle: true });
+    localDraftStatus.value = `${kind === 'video' ? '视频' : '音频'}文件授权已保存，刷新后会尝试自动恢复。`;
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      console.error(error);
+      mediaError.value = `选择本地${kind === 'video' ? '视频' : '音频'}失败：${error.message}`;
+    }
+  }
 };
 
 const loadMedia = async (event, kind) => {
@@ -2378,6 +2448,7 @@ watch(activeDuration, () => {
 
 onMounted(async () => {
   await store.loadDraft();
+  await loadLocalMediaFileHandles();
   await autoRestoreLocalMediaFolder();
   await restoreLocalProjectDraft();
   await rehydrateSelectedTaskMediaFromLocalFolder();
