@@ -85,37 +85,38 @@ export const transcodeWebmToMp4 = async (webmBlob, { fps = 30, quality = 'high',
     await instance.deleteFile(outputName).catch(() => {});
   }
 };
-export const transcodeInputVideoToMp4 = async (videoFile, { onProgress } = {}) => {
+export const transcodeInputVideoToMp4 = async (videoFile, { onProgress, previewProxy = false } = {}) => {
   const instance = await getFFmpeg(onProgress);
   const extension = videoFile.name.split('.').pop()?.toLowerCase() || 'mov';
   const inputName = `source_${Date.now()}.${extension}`;
-  const outputName = `source_${Date.now()}.mp4`;
+  const outputName = `source_${Date.now()}${previewProxy ? '_preview' : ''}.mp4`;
 
   const progressHandler = ({ progress }) => {
-    if (Number.isFinite(progress)) onProgress?.(0.3 + Math.max(0, Math.min(0.68, progress * 0.68)), '转换实拍素材');
+    if (Number.isFinite(progress)) onProgress?.(0.3 + Math.max(0, Math.min(0.68, progress * 0.68)), previewProxy ? '生成预览代理' : '转换实拍素材');
   };
 
   instance.on('progress', progressHandler);
   try {
     onProgress?.(0, '读取实拍素材');
     await instance.writeFile(inputName, await fetchFile(videoFile));
+    const videoArgs = previewProxy
+      ? ['-vf', 'scale=720:-2', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-r', '30']
+      : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23'];
     const code = await instance.exec([
       '-i', inputName,
       '-map', '0:v:0',
       '-map', '0:a?',
-      '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-crf', '23',
+      ...videoArgs,
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       '-c:a', 'aac',
-      '-b:a', '160k',
+      '-b:a', previewProxy ? '96k' : '160k',
       outputName,
     ]);
     if (code !== 0) throw new Error(`FFmpeg exited with code ${code}`);
     const data = await instance.readFile(outputName);
-    onProgress?.(1, '实拍素材转换完成');
-    return new File([data.buffer], videoFile.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' });
+    onProgress?.(1, previewProxy ? '预览代理生成完成' : '实拍素材转换完成');
+    return new File([data.buffer], videoFile.name.replace(/\.[^.]+$/, '') + (previewProxy ? '-preview.mp4' : '.mp4'), { type: 'video/mp4' });
   } finally {
     instance.off('progress', progressHandler);
     await instance.deleteFile(inputName).catch(() => {});

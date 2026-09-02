@@ -825,6 +825,8 @@ const loadMedia = async (event, kind) => {
   mediaError.value = '';
 
   if (kind === 'video') {
+    media.videoName = file.name;
+    mediaError.value = `读取实拍素材：${file.name}`;
     let loaded = await attachVideoFile(file);
     let transcodeError = '';
     if (!loaded) {
@@ -835,15 +837,17 @@ const loadMedia = async (event, kind) => {
       } else if (file.size > AUTO_TRANSCODE_WARN_BYTES && !window.confirm(`这个实拍素材有 ${fileSize}，浏览器内转码可能会卡几分钟。继续尝试转换吗？`)) {
         transcodeError = '已取消浏览器内转码';
       } else {
-        mediaError.value = `浏览器正在尝试转换这个实拍素材：${file.name}`;
+        mediaError.value = `浏览器无法直接预览，正在生成轻量预览代理：${file.name}`;
         try {
           const converted = await transcodeInputVideoToMp4(file, {
-            onProgress: (_progress, status) => {
-              mediaError.value = `${status}：${file.name}`;
+            previewProxy: true,
+            onProgress: (progress, status) => {
+              const pct = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : '';
+              mediaError.value = `${status}${pct}：${file.name}`;
             },
           });
-          loaded = await attachVideoFile(converted, `${file.name} -> MP4`);
-          if (!loaded) transcodeError = '转换后的 MP4 仍无法被浏览器读取';
+          loaded = await attachVideoFile(converted, `${file.name} -> 预览代理 MP4`);
+          if (!loaded) transcodeError = '预览代理 MP4 仍无法被浏览器读取';
         } catch (error) {
           console.error(error);
           transcodeError = error?.message || '转码器执行失败';
@@ -852,10 +856,10 @@ const loadMedia = async (event, kind) => {
       }
     }
     if (!loaded) {
-      mediaError.value = `暂时无法解码这个视频：${file.name}。${transcodeError ? `原因：${transcodeError}。` : ''}请先导出为 H.264 + AAC 的 MP4，或降低分辨率后再导入。`;
+      mediaError.value = `暂时无法解码这个视频：${file.name}。${transcodeError ? `原因：${transcodeError}。` : ''}这类 MOV/HEVC 在浏览器里经常不能直接预览；请先转成 H.264 + AAC 的 MP4，或等待后端 FFmpeg/GPU 导出服务接入。`;
       clearVideoFile();
     } else {
-      mediaError.value = '';
+      mediaError.value = media.videoName.includes('预览代理') ? '已使用轻量预览代理；高清成片请走后端 FFmpeg/GPU 导出。' : '';
     }
   } else {
     const [path] = WebAssetPool.registerFiles([file]);
