@@ -969,13 +969,45 @@ const restoreLocalMediaFolder = async () => {
   try {
     localMediaDirectoryHandle = await localforage.getItem(LOCAL_MEDIA_DIR_HANDLE_KEY);
     if (!localMediaDirectoryHandle) {
-      localMediaStatus.value = '还没有保存过素材文件夹授权，请先选择素材文件夹。';
+      localMediaStatus.value = '还没有保存过素材文件夹授权，请先点“授权素材路径”。';
       return;
     }
     await scanLocalMediaDirectory();
   } catch (error) {
     console.error(error);
     localMediaStatus.value = `恢复素材文件夹失败：${error.message}`;
+  } finally {
+    localMediaBusy.value = false;
+  }
+};
+
+const autoRestoreLocalMediaFolder = async () => {
+  localMediaBusy.value = true;
+  try {
+    localMediaDirectoryHandle = await localforage.getItem(LOCAL_MEDIA_DIR_HANDLE_KEY);
+    if (!localMediaDirectoryHandle) {
+      localMediaStatus.value = '首次使用请点“授权素材路径”；浏览器不允许网页自动弹出文件夹选择。';
+      return;
+    }
+
+    const permission = await localMediaDirectoryHandle.queryPermission({ mode: 'readwrite' });
+    if (permission === 'granted') {
+      await scanLocalMediaDirectory();
+      return;
+    }
+
+    const requested = await localMediaDirectoryHandle
+      .requestPermission({ mode: 'readwrite' })
+      .catch(() => 'prompt');
+
+    if (requested === 'granted') {
+      await scanLocalMediaDirectory();
+    } else {
+      localMediaStatus.value = '已找到上次素材路径记录；浏览器需要你点一次“恢复”完成授权。';
+    }
+  } catch (error) {
+    console.error(error);
+    localMediaStatus.value = `自动恢复素材路径失败：${error.message}`;
   } finally {
     localMediaBusy.value = false;
   }
@@ -2243,7 +2275,7 @@ watch(activeDuration, () => {
 
 onMounted(async () => {
   await store.loadDraft();
-  localMediaDirectoryHandle = await localforage.getItem(LOCAL_MEDIA_DIR_HANDLE_KEY).catch(() => null);
+  await autoRestoreLocalMediaFolder();
   await restoreLocalProjectDraft();
   refreshOfficialTemplates();
   animationFrameId = requestAnimationFrame(renderLoop);
