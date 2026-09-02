@@ -49,6 +49,20 @@ export const uploadCloudAsset = async (ownerId, file, { kind = 'asset', projectI
   return response.json();
 };
 
+export const listCloudFonts = async () => {
+  const response = await assertOk(await fetch(endpoint('/api/fonts')));
+  return response.json();
+};
+
+export const uploadCloudFont = async (ownerId, adminToken, file) => {
+  const params = new URLSearchParams({ fileName: file.name });
+  const response = await assertOk(await fetch(endpoint(`/api/fonts?${params}`), {
+    method: 'POST',
+    headers: adminHeadersFor(ownerId, adminToken, { 'content-type': file.type || 'application/octet-stream' }),
+    body: file,
+  }));
+  return response.json();
+};
 export const assetUrl = (ownerId, objectKey) => {
   const params = new URLSearchParams({ key: objectKey, ownerId: ownerId || 'local-user' });
   return endpoint(`/api/assets?${params}`);

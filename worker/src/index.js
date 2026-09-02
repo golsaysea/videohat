@@ -83,6 +83,35 @@ const slug = (value) => String(value || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 120);
 
+const fontMimeType = (fileName, fallback = 'application/octet-stream') => {
+  const lower = String(fileName || '').toLowerCase();
+  if (lower.endsWith('.woff2')) return 'font/woff2';
+  if (lower.endsWith('.woff')) return 'font/woff';
+  if (lower.endsWith('.ttf')) return 'font/ttf';
+  if (lower.endsWith('.otf')) return 'font/otf';
+  if (lower.endsWith('.ttc')) return 'font/collection';
+  return fallback;
+};
+
+const isAllowedFontFile = (fileName) => /\.(woff2?|ttf|otf|ttc)$/i.test(String(fileName || ''));
+
+const fontFamilyFromFileName = (fileName) => String(fileName || 'VideoHat Font')
+  .replace(/\.(woff2?|ttf|otf|ttc)$/i, '')
+  .replace(/[-_]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 120) || 'VideoHat Font';
+
+const sanitizeFont = (row) => ({
+  id: row.id,
+  ownerId: row.owner_id,
+  family: fontFamilyFromFileName(row.file_name),
+  fileName: row.file_name,
+  objectKey: row.object_key,
+  contentType: row.content_type || fontMimeType(row.file_name),
+  size: row.size || 0,
+  createdAt: row.created_at,
+});
 const readJson = async (request) => {
   const text = await request.text();
   if (!text) return {};
@@ -233,6 +262,48 @@ const deleteProject = async (request, env, id) => withDatabase(env, async () => 
   return ok(env, { ok: true });
 }, 'Project delete');
 
+const listFonts = async (request, env) => withDatabase(env, async () => {
+  const { results } = await env.DB.prepare(`
+    SELECT id, owner_id, file_name, object_key, content_type, size, created_at
+    FROM assets
+    WHERE kind = 'font'
+    ORDER BY file_name COLLATE NOCASE ASC
+    LIMIT 500
+  `).all();
+  return ok(env, { fonts: results.map(sanitizeFont) });
+}, 'Font database');
+
+const uploadFont = async (request, env) => {
+  const denied = requireAdmin(request, env);
+  if (denied) return denied;
+  return withDatabase(env, async () => {
+    const ownerId = await ownerFromRequest(request, env);
+    const url = new URL(request.url);
+    const fileName = url.searchParams.get('fileName') || 'font.woff2';
+    if (!isAllowedFontFile(fileName)) return fail(env, 'Only WOFF2, WOFF, TTF, OTF and TTC font files are supported', 415);
+
+    const id = crypto.randomUUID();
+    const kind = 'font';
+    const projectId = 'official-fonts';
+    const objectKey = `${ownerId}/${kind}/${id}-${slug(fileName) || 'font'}`;
+    const contentType = fontMimeType(fileName, request.headers.get('content-type') || 'application/octet-stream');
+    const size = Number(request.headers.get('content-length') || 0);
+    const bucket = mediaBucket(env);
+    if (!bucket) return fail(env, 'Media bucket binding missing', 500);
+
+    await bucket.put(objectKey, request.body, {
+      httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
+      customMetadata: { ownerId, projectId, fileName, kind },
+    });
+
+    await env.DB.prepare(`
+      INSERT INTO assets (id, owner_id, project_id, kind, file_name, object_key, content_type, size)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, ownerId, projectId, kind, fileName, objectKey, contentType, size).run();
+
+    return ok(env, { font: { id, ownerId, projectId, kind, family: fontFamilyFromFileName(fileName), fileName, objectKey, contentType, size } }, 201);
+  }, 'Font upload');
+};
 const uploadAsset = async (request, env) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const url = new URL(request.url);
@@ -289,6 +360,8 @@ export default {
       if (path === '/api/health') return ok(env, { ok: true, service: 'videohat-api' });
       if (path === '/api/db/ensure') return withDatabase(env, async () => ok(env, { ok: true, db: true, media: Boolean(mediaBucket(env)) }), 'Database setup');
       if (path === '/api/templates' && request.method === 'GET') return listTemplates(request, env);
+      if (path === '/api/fonts' && request.method === 'GET') return listFonts(request, env);
+      if (path === '/api/fonts' && request.method === 'POST') return uploadFont(request, env);
       if (path === '/api/templates' && request.method === 'POST') return saveTemplate(request, env);
       if (path.startsWith('/api/templates/') && request.method === 'DELETE') return deleteTemplate(request, env, decodeURIComponent(path.split('/').pop()));
       if (path === '/api/projects' && request.method === 'GET') return listProjects(request, env);

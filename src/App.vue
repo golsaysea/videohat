@@ -148,7 +148,31 @@
           </div>
         </div>
 
-
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">官方字体库</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="fontBusy" @click="refreshCloudFonts">刷新</button>
+          </div>
+          <p class="min-h-5 text-xs leading-relaxed text-gray-500">{{ fontLibraryStatus }}</p>
+          <div v-if="fontUploadProgress > 0 || fontBusy" class="space-y-1 rounded border border-cyan-500/30 bg-cyan-500/10 p-2">
+            <div class="flex items-center justify-between text-[11px] text-cyan-100">
+              <span>字体处理</span>
+              <span>{{ Math.round(fontUploadProgress * 100) }}%</span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded bg-black/40">
+              <div class="h-full rounded bg-cyan-400 transition-all" :style="{ width: `${Math.round(fontUploadProgress * 100)}%` }"></div>
+            </div>
+          </div>
+          <label v-if="isAdminMode" class="block cursor-pointer rounded border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-center text-xs text-amber-100 hover:bg-amber-400/20">
+            批量上传字体到 R2
+            <input class="hidden" type="file" multiple accept=".woff2,.woff,.ttf,.otf,.ttc,font/*" @change="uploadOfficialFonts" />
+          </label>
+          <div v-if="cloudFonts.length" class="max-h-32 space-y-1 overflow-y-auto rounded border border-[#2a2f3a] bg-black/20 p-2">
+            <button v-for="font in cloudFonts" :key="font.id" class="w-full truncate rounded px-2 py-1 text-left text-xs text-gray-300 hover:bg-white/10" :style="{ fontFamily: `'${font.family}', Arial, sans-serif` }" @click="ensureCloudFontLoaded(font)">
+              {{ font.family }}
+            </button>
+          </div>
+        </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
             <span class="text-xs font-bold text-gray-500">任务队列</span>
@@ -490,7 +514,7 @@ import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRen
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeInputVideoToMp4, transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
-import { assetUrl, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset } from './utils/cloudProjectApi.js';
+import { assetUrl, listCloudFonts, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset, uploadCloudFont } from './utils/cloudProjectApi.js';
 import { downloadDriveFile, isGoogleDriveConfigured, openDrivePicker, requestDriveToken } from './utils/googleDriveMedia.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
@@ -563,6 +587,12 @@ const ColorField = defineComponent({
   },
 });
 
+const cloudFonts = ref([]);
+const fontLibraryStatus = ref('字体库未读取');
+const fontBusy = ref(false);
+const fontUploadProgress = ref(0);
+const loadedCloudFontKeys = new Set();
+
 const CheckField = defineComponent({
   props: { modelValue: Boolean, label: String },
   emits: ['update:modelValue'],
@@ -585,6 +615,16 @@ const fontPresets = [
   { value: 'Courier New', label: 'Typewriter', sample: 'Psalm 91' },
 ];
 
+const fontChoices = computed(() => [
+  ...fontPresets,
+  ...cloudFonts.value.map((font) => ({
+    ...font,
+    value: font.family,
+    label: 'R2 · ' + font.family,
+    sample: 'VideoHat Font',
+  })),
+]);
+
 const FontPreviewPicker = defineComponent({
   props: { modelValue: String, label: String, sample: String },
   emits: ['update:modelValue'],
@@ -594,7 +634,7 @@ const FontPreviewPicker = defineComponent({
         h('span', { class: 'text-xs text-gray-500' }, props.label),
         h('span', { class: 'max-w-[160px] truncate text-[11px] text-cyan-300' }, props.modelValue || 'Arial'),
       ]),
-      h('div', { class: 'grid grid-cols-2 gap-2' }, fontPresets.map((font) => {
+      h('div', { class: 'grid grid-cols-2 gap-2' }, fontChoices.value.map((font) => {
         const active = (props.modelValue || 'Arial') === font.value;
         return h('button', {
           type: 'button',
@@ -602,7 +642,10 @@ const FontPreviewPicker = defineComponent({
             'min-h-[74px] rounded border bg-black/20 p-2 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10',
             active ? 'border-cyan-400 ring-1 ring-cyan-400/50' : 'border-[#303648]',
           ],
-          onClick: () => emit('update:modelValue', font.value),
+          onClick: () => {
+            ensureCloudFontLoaded(font);
+            emit('update:modelValue', font.value);
+          },
         }, [
           h('span', { class: 'block truncate text-[11px] text-gray-500' }, font.label),
           h('span', {
@@ -2355,6 +2398,70 @@ const persistAdminToken = () => {
   else localStorage.removeItem('videohat_admin_token');
 };
 
+const ensureCloudFontLoaded = async (font) => {
+  if (!font?.objectKey || typeof FontFace === 'undefined' || !document?.fonts) return;
+  const key = font.objectKey;
+  if (loadedCloudFontKeys.has(key)) return;
+  loadedCloudFontKeys.add(key);
+  try {
+    const family = font.family || font.value;
+    const face = new FontFace(family, `url("${assetUrl(font.ownerId || cloudOwnerId.value, font.objectKey)}")`);
+    await face.load();
+    document.fonts.add(face);
+  } catch (error) {
+    loadedCloudFontKeys.delete(key);
+    console.warn('Cloud font load failed', error);
+  }
+};
+
+const refreshCloudFonts = async () => {
+  fontBusy.value = true;
+  fontUploadProgress.value = 0.12;
+  fontLibraryStatus.value = '读取 R2 官方字体库...';
+  try {
+    const { fonts } = await listCloudFonts();
+    cloudFonts.value = fonts || [];
+    fontUploadProgress.value = 0.55;
+    fontLibraryStatus.value = `读取到 ${cloudFonts.value.length} 个字体，正在预热前 24 个预览...`;
+    await Promise.allSettled(cloudFonts.value.slice(0, 24).map((font) => ensureCloudFontLoaded(font)));
+    fontUploadProgress.value = 1;
+    fontLibraryStatus.value = cloudFonts.value.length ? `已加载 ${cloudFonts.value.length} 个 R2 字体` : 'R2 字体库为空，管理员可批量上传字体';
+  } catch (error) {
+    console.error(error);
+    fontLibraryStatus.value = `字体库读取失败：${error.message}`;
+  } finally {
+    fontBusy.value = false;
+    if (fontUploadProgress.value >= 1) window.setTimeout(() => { fontUploadProgress.value = 0; }, 900);
+  }
+};
+
+const uploadOfficialFonts = async (event) => {
+  const files = [...(event.target.files || [])];
+  event.target.value = '';
+  if (!files.length) return;
+  persistAdminToken();
+  persistCloudOwner();
+  fontBusy.value = true;
+  fontUploadProgress.value = 0.02;
+  try {
+    const validFiles = files.filter((file) => /\.(woff2?|ttf|otf|ttc)$/i.test(file.name));
+    if (!validFiles.length) throw new Error('请选择 WOFF2、WOFF、TTF、OTF 或 TTC 字体文件');
+    let uploaded = 0;
+    for (const file of validFiles) {
+      fontLibraryStatus.value = `上传字体 ${uploaded + 1}/${validFiles.length}：${file.name}`;
+      await uploadCloudFont(cloudOwnerId.value, adminToken.value, file);
+      uploaded += 1;
+      fontUploadProgress.value = uploaded / validFiles.length;
+    }
+    fontLibraryStatus.value = `已上传 ${uploaded} 个字体，正在刷新字体库...`;
+    await refreshCloudFonts();
+  } catch (error) {
+    console.error(error);
+    fontLibraryStatus.value = `字体上传失败：${error.message}`;
+  } finally {
+    fontBusy.value = false;
+  }
+};
 const templatePayloadFromCurrent = () => {
   syncSelectedTask();
   const payload = createProjectPayload();
