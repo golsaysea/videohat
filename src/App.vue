@@ -68,22 +68,6 @@
           <button v-if="selectedCloudProjectId" class="w-full rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
         </div>
 
-        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">本地记录</h3>
-            <button class="text-xs text-red-300 hover:text-red-200" @click="clearLocalLog">清空</button>
-          </div>
-          <div class="max-h-32 space-y-2 overflow-y-auto pr-1">
-            <div v-for="entry in operationLog.slice(0, 8)" :key="entry.id" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
-              <div class="flex items-center justify-between gap-2 text-xs">
-                <span class="truncate font-semibold" :class="entry.status === 'error' ? 'text-red-300' : 'text-gray-200'">{{ entry.action }}</span>
-                <span class="shrink-0 text-[10px] text-gray-500">{{ formatLogTime(entry.time) }}</span>
-              </div>
-              <div class="mt-1 truncate text-[11px] text-gray-500">{{ summarizeLog(entry) }}</div>
-            </div>
-            <div v-if="!operationLog.length" class="rounded border border-dashed border-[#2a2f3a] py-4 text-center text-xs text-gray-600">暂无本地操作记录</div>
-          </div>
-        </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
@@ -263,7 +247,6 @@ import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
 import { assetUrl, listCloudProjects, saveCloudProject, uploadCloudAsset } from './utils/cloudProjectApi.js';
-import { appendOperationLog, clearOperationLog, loadOperationLog } from './utils/localOperationLog.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
 
@@ -468,8 +451,6 @@ const cloudBusy = ref(false);
 const cloudProjects = ref([]);
 const selectedCloudProjectId = ref('');
 const currentCloudProjectId = ref('');
-const operationLog = ref([]);
-let parameterLogTimer = 0;
 
 const durationModeOptions = [
   { value: 'auto', label: '自动：音频优先，否则视频' },
@@ -556,33 +537,6 @@ const centerOverlayDefaults = () => {
 };
 
 
-const recordLocalOperation = async (action, detail = {}, status = 'ok') => {
-  try {
-    operationLog.value = await appendOperationLog({ action, detail, status });
-  } catch (error) {
-    console.error(error);
-  }
-};
-
-const summarizeLog = (entry) => {
-  const detail = entry.detail || {};
-  if (detail.fileName) return detail.fileName;
-  if (detail.taskName) return detail.taskName;
-  if (detail.projectTitle) return detail.projectTitle;
-  if (detail.format) return `${detail.format.toUpperCase()} ${detail.duration ? formatDuration(detail.duration) : ''}`.trim();
-  if (Number.isFinite(detail.count)) return `${detail.count} 条`;
-  if (detail.message) return detail.message;
-  return entry.status === 'error' ? '失败' : '完成';
-};
-
-const formatLogTime = (value) => {
-  if (!value) return '';
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-const clearLocalLog = async () => {
-  operationLog.value = await clearOperationLog();
-};
 
 const syncSelectedTask = () => {
   const current = tasks.value[selectedTaskIndex.value];
@@ -622,7 +576,6 @@ const selectTask = (index) => {
   syncSelectedTask();
   selectedTaskIndex.value = index;
   applyTaskToEditor(tasks.value[index]);
-  recordLocalOperation('切换任务', { taskName: tasks.value[index]?.baseName });
 };
 
 const addTaskFromCurrent = () => {
@@ -641,14 +594,12 @@ const addTaskFromCurrent = () => {
     audioAsset: media.audioAsset,
   });
   selectedTaskIndex.value = tasks.value.length - 1;
-  recordLocalOperation('保存为任务', { taskName: tasks.value[selectedTaskIndex.value]?.baseName });
 };
 
 const clearQueue = () => {
   if (!window.confirm('清空全部任务队列？')) return;
   tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, videoUrl: media.videoUrl, audioUrl: media.audioUrl, videoAsset: media.videoAsset, audioAsset: media.audioAsset }];
   selectedTaskIndex.value = 0;
-  recordLocalOperation('清空队列');
 };
 
 const loadMedia = async (event, kind) => {
@@ -702,11 +653,7 @@ const loadMedia = async (event, kind) => {
   previewTime.value = 0;
   syncSelectedTask();
   drawPreview();
-  recordLocalOperation(kind === 'video' ? '导入视频' : '导入音频', {
-    fileName: file.name,
-    duration: kind === 'video' ? media.videoDuration : media.audioDuration,
-    message: mediaError.value,
-  }, mediaError.value ? 'error' : 'ok');
+
 };
 
 const waitForMetadata = (element, timeoutMs = 30000) => new Promise((resolve) => {
@@ -901,7 +848,6 @@ const exportCurrentTask = async () => {
   isExporting.value = true;
   wasExporting = true;
   const duration = activeDuration.value;
-  recordLocalOperation('开始导出', { format: exportOptions.format, duration });
   const useSeparateAudio = Boolean(media.audioUrl);
   const useVideoAudio = !useSeparateAudio && Boolean(media.videoUrl);
   if (useSeparateAudio || useVideoAudio) await ensureAudioGraph(useSeparateAudio);
@@ -925,7 +871,6 @@ const exportCurrentTask = async () => {
   const mimeType = supportedMime();
   if (!mimeType) {
     window.alert('当前浏览器不支持 canvas 视频录制，请换 Chrome / Edge 最新版。');
-    recordLocalOperation('导出失败', { message: '浏览器不支持 canvas 视频录制' }, 'error');
     isExporting.value = false;
     wasExporting = false;
     stopPlayback();
@@ -960,7 +905,6 @@ const exportCurrentTask = async () => {
       } catch (error) {
         console.error(error);
         window.alert('MP4 转码失败，没有下载 WebM。你可以改选“WebM：快速导出”作为备用，或换 Chrome / Edge 再试。');
-        recordLocalOperation('导出失败', { message: error.message || 'MP4 转码失败' }, 'error');
         exportStatus.value = 'MP4 转码失败';
         isExporting.value = false;
         wasExporting = false;
@@ -976,7 +920,6 @@ const exportCurrentTask = async () => {
     triggerDownload(url, `${tasks.value[selectedTaskIndex.value]?.baseName || 'reels'}_${Date.now()}.${ext}`);
     exportProgress.value = 1;
     exportStatus.value = `已导出 ${ext.toUpperCase()}`;
-    recordLocalOperation('导出完成', { format: ext, duration, taskName: tasks.value[selectedTaskIndex.value]?.baseName });
     isExporting.value = false;
     wasExporting = false;
     stopPlayback();
@@ -1054,7 +997,6 @@ const downloadJson = (name, payload) => {
 const downloadProject = () => {
   syncSelectedTask();
   downloadJson(`videokit_reels_project_${Date.now()}.json`, createProjectPayload());
-  recordLocalOperation('保存本地工程 JSON', { count: tasks.value.length });
 };
 
 const persistCloudOwner = () => {
@@ -1076,11 +1018,9 @@ const refreshCloudProjects = async () => {
     const { projects } = await listCloudProjects(cloudOwnerId.value);
     cloudProjects.value = projects || [];
     cloudStatus.value = `已读取 ${cloudProjects.value.length} 个工程`;
-    recordLocalOperation('刷新云端工程', { count: cloudProjects.value.length });
   } catch (error) {
     console.error(error);
     cloudStatus.value = `云端读取失败：${error.message}`;
-    recordLocalOperation('刷新云端失败', { message: error.message }, 'error');
   } finally {
     cloudBusy.value = false;
   }
@@ -1101,12 +1041,10 @@ const saveProjectOnline = async () => {
     currentCloudProjectId.value = project.id;
     selectedCloudProjectId.value = project.id;
     cloudStatus.value = `已保存：${project.title}`;
-    recordLocalOperation('保存云端工程', { projectTitle: project.title });
     await refreshCloudProjects();
   } catch (error) {
     console.error(error);
     cloudStatus.value = `保存失败：${error.message}`;
-    recordLocalOperation('保存云端失败', { message: error.message }, 'error');
   } finally {
     cloudBusy.value = false;
   }
@@ -1129,11 +1067,9 @@ const uploadCurrentAssets = async () => {
     }
     syncSelectedTask();
     cloudStatus.value = uploaded.length ? `已上传 ${uploaded.length} 个素材到 R2` : '当前没有可上传的新素材';
-    recordLocalOperation('上传云端素材', { count: uploaded.length });
   } catch (error) {
     console.error(error);
     cloudStatus.value = `上传失败：${error.message}`;
-    recordLocalOperation('上传云端失败', { message: error.message }, 'error');
   } finally {
     cloudBusy.value = false;
   }
@@ -1152,7 +1088,6 @@ const loadSelectedCloudProject = async () => {
   selectedTaskIndex.value = 0;
   await applyTaskToEditor(tasks.value[0]);
   cloudStatus.value = `已加载：${project.title}`;
-  recordLocalOperation('加载云端工程', { projectTitle: project.title });
 };
 const handleGeneratedTasks = (generatedTasks) => {
   syncSelectedTask();
@@ -1168,32 +1103,25 @@ const handleGeneratedTasks = (generatedTasks) => {
   selectedTaskIndex.value = tasks.value.length - generatedTasks.length;
   applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
   showBulkModal.value = false;
-  recordLocalOperation('批量生成任务', { count: generatedTasks.length });
 };
 
 watch(overlayState, () => {
   syncSelectedTask();
   drawPreview();
-  clearTimeout(parameterLogTimer);
-  parameterLogTimer = window.setTimeout(() => {
-    recordLocalOperation('参数已调整', { taskName: tasks.value[selectedTaskIndex.value]?.baseName });
-  }, 1200);
+
 }, { deep: true });
 watch(activeDuration, () => {
   if (previewTime.value > activeDuration.value) previewTime.value = 0;
 });
 
-onMounted(async () => {
+onMounted(() => {
   store.loadDraft();
-  operationLog.value = await loadOperationLog();
-  await recordLocalOperation('打开编辑器', { taskName: tasks.value[selectedTaskIndex.value]?.baseName });
   animationFrameId = requestAnimationFrame(renderLoop);
 });
 
 onUnmounted(() => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   if (exportStopTimer) cancelAnimationFrame(exportStopTimer);
-  clearTimeout(parameterLogTimer);
   stopPlayback();
 });
 </script>
