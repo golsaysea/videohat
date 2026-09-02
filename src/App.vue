@@ -889,6 +889,19 @@ const readFileFromLocalFolder = async (name) => {
   }
 };
 
+const mergeLocalMediaItems = (...groups) => {
+  const keyed = new Map();
+  groups.flat().filter(Boolean).forEach((item) => {
+    const key = `${item.kind}:${item.name}`;
+    keyed.set(key, {
+      ...keyed.get(key),
+      ...item,
+      cacheName: item.cacheName || keyed.get(key)?.cacheName || '',
+    });
+  });
+  return [...keyed.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
+
 const findLocalMediaItem = (name) => localMediaItems.value.find((item) => item.name === name || item.cacheName === name) || null;
 
 const rememberLocalMediaItem = async (file, kind, cacheName = '') => {
@@ -937,7 +950,7 @@ const scanLocalMediaDirectory = async () => {
         cacheName: kind === 'video' && await hasFileInLocalFolder(cacheName) ? cacheName : '',
       });
     }
-    localMediaItems.value = items.sort((a, b) => a.name.localeCompare(b.name));
+    localMediaItems.value = mergeLocalMediaItems(localMediaItems.value, items);
     localMediaStatus.value = `已读取 ${items.length} 个本地素材；视频会优先使用旁边的已转换 MP4。`;
   } catch (error) {
     console.error(error);
@@ -1247,6 +1260,22 @@ const clearVideoFile = () => {
   videoEl.value.load();
 };
 
+const likelyNeedsPreviewProxy = (file) => {
+  if (!file) return false;
+  const ext = fileExtension(file.name);
+  return ['.mov', '.m4v', '.quicktime'].includes(ext) || file.size > AUTO_TRANSCODE_WARN_BYTES;
+};
+
+const ensureLocalFolderForSelectedVideo = async (file) => {
+  if (!file || localMediaDirectoryHandle || !window.showDirectoryPicker || !likelyNeedsPreviewProxy(file)) return;
+  localMediaStatus.value = '检测到这个视频可能需要转换，请授权素材所在文件夹，用来读取/写入旁路 MP4 缓存。';
+  try {
+    await selectLocalMediaFolder();
+  } catch (error) {
+    console.error(error);
+  }
+};
+
 const processMediaFile = async (file, kind, options = {}) => {
   if (!file) return;
   const sourceName = options.sourceName || file.name;
@@ -1287,6 +1316,13 @@ const processMediaFile = async (file, kind, options = {}) => {
           });
           updateMediaProgress(0.98, '挂载预览代理', converted.name);
           loaded = await attachVideoFile(converted, `${file.name} -> 预览代理 MP4`);
+          if (loaded) {
+            const cacheName = await writeConvertedCache(sourceName, converted);
+            if (cacheName) {
+              await rememberLocalMediaItem({ name: sourceName }, 'video', cacheName);
+              localMediaStatus.value = `已写入旁路 MP4 缓存：${cacheName}`;
+            }
+          }
           if (!loaded) transcodeError = '预览代理 MP4 仍无法被浏览器读取';
         } catch (error) {
           console.error(error);
@@ -1342,6 +1378,7 @@ const processMediaFile = async (file, kind, options = {}) => {
 const loadMedia = async (event, kind) => {
   const file = event.target.files?.[0];
   event.target.value = '';
+  if (kind === 'video') await ensureLocalFolderForSelectedVideo(file);
   await processMediaFile(file, kind, { sourceName: file?.name });
 };
 
@@ -2030,10 +2067,12 @@ const restoreLocalProjectDraft = async () => {
     media.videoDriveItem = draft.media?.videoDriveItem || null;
     media.audioDriveItem = draft.media?.audioDriveItem || null;
     mediaPool.value = Array.isArray(draft.mediaPool) ? draft.mediaPool : [];
-    localMediaItems.value = Array.isArray(draft.localMediaItems) ? draft.localMediaItems : [];
+    localMediaItems.value = mergeLocalMediaItems(localMediaItems.value, Array.isArray(draft.localMediaItems) ? draft.localMediaItems : []);
     await applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
+    const restoredVideo = Boolean(media.videoUrl);
+    const restoredAudio = Boolean(media.audioUrl);
     const savedAt = draft.savedAt ? formatCloudTime(draft.savedAt) : '';
-    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；素材路径记录已保留，点“恢复”后可继续读取本地素材。`;
+    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；${restoredVideo || restoredAudio ? '素材已从本地缓存重新挂载。' : '素材文件需要先授权同一个文件夹才能重新挂载。'}`;
   } catch (error) {
     console.error(error);
     localDraftStatus.value = `本地草稿恢复失败：${error.message}`;
