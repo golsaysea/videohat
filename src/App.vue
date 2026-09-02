@@ -540,6 +540,15 @@ const formatDuration = (value) => {
   const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
   return `${mins}:${secs}`;
 };
+
+const AUTO_TRANSCODE_WARN_BYTES = 80 * 1024 * 1024;
+const AUTO_TRANSCODE_LIMIT_BYTES = 220 * 1024 * 1024;
+
+const formatFileSize = (bytes) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '未知大小';
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
 const applyTextCase = (value, mode = 'preserve') => {
   const text = String(value || '');
   if (mode === 'upper') return text.toUpperCase();
@@ -671,28 +680,40 @@ const loadMedia = async (event, kind) => {
 
   if (kind === 'video') {
     let loaded = await attachVideoFile(file);
+    let transcodeError = '';
     if (!loaded) {
       clearVideoFile();
-      mediaError.value = `浏览器正在尝试转换这个实拍素材：${file.name}`;
-      try {
-        const converted = await transcodeInputVideoToMp4(file, {
-          onProgress: (_progress, status) => {
-            mediaError.value = `${status}：${file.name}`;
-          },
-        });
-        loaded = await attachVideoFile(converted, `${file.name} -> MP4`);
-      } catch (error) {
-        console.error(error);
-        loaded = false;
+      const fileSize = formatFileSize(file.size);
+      if (file.size > AUTO_TRANSCODE_LIMIT_BYTES) {
+        transcodeError = `文件 ${fileSize}，超过浏览器安全转码上限`;
+      } else if (file.size > AUTO_TRANSCODE_WARN_BYTES && !window.confirm(`这个实拍素材有 ${fileSize}，浏览器内转码可能会卡几分钟。继续尝试转换吗？`)) {
+        transcodeError = '已取消浏览器内转码';
+      } else {
+        mediaError.value = `浏览器正在尝试转换这个实拍素材：${file.name}`;
+        try {
+          const converted = await transcodeInputVideoToMp4(file, {
+            onProgress: (_progress, status) => {
+              mediaError.value = `${status}：${file.name}`;
+            },
+          });
+          loaded = await attachVideoFile(converted, `${file.name} -> MP4`);
+          if (!loaded) transcodeError = '转换后的 MP4 仍无法被浏览器读取';
+        } catch (error) {
+          console.error(error);
+          transcodeError = error?.message || '转码器执行失败';
+          loaded = false;
+        }
       }
     }
     if (!loaded) {
-      mediaError.value = `暂时无法解码这个视频：${file.name}。如果它是 iPhone HDR/HEVC 或 4K MOV，请先导出为 H.264 + AAC 的 MP4，或降低分辨率后再导入。`;
+      mediaError.value = `暂时无法解码这个视频：${file.name}。${transcodeError ? `原因：${transcodeError}。` : ''}请先导出为 H.264 + AAC 的 MP4，或降低分辨率后再导入。`;
       clearVideoFile();
     } else {
       mediaError.value = '';
     }
   } else {
+    const [path] = WebAssetPool.registerFiles([file]);
+    const url = WebAssetPool.getUrl(path);
     media.audioFile = file;
     media.audioUrl = url;
     media.audioName = file.name;
@@ -817,8 +838,8 @@ const renderLoop = () => {
   if (isPlaying.value && !wasExporting) {
     previewTime.value = media.audioUrl && audioEl.value ? audioEl.value.currentTime : (videoEl.value?.currentTime || previewTime.value);
     if (previewTime.value >= activeDuration.value) stopPlayback();
+    drawPreview();
   }
-  drawPreview();
   animationFrameId = requestAnimationFrame(renderLoop);
 };
 
