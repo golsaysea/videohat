@@ -17,7 +17,7 @@
         </div>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showBulkModal = true">批量表格</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="downloadProject">保存工程 JSON</button>
-        <button class="rounded bg-blue-600 px-5 py-1.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500" :disabled="isExporting" @click="exportCurrentTask">
+        <button class="rounded bg-blue-600 px-5 py-1.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500" :disabled="isExporting" @click="openExportDialog('current')">
           {{ isExporting ? '导出中...' : '导出当前视频' }}
         </button>
       </div>
@@ -116,12 +116,21 @@
             >
               <span class="block truncate text-sm font-semibold text-white">{{ task.baseName }}</span>
               <span class="mt-1 block truncate text-xs text-gray-500">{{ task.videoName || '无视频' }} / {{ task.audioName || '无音频' }}</span>
+              <div v-if="task.exportStatus" class="mt-2 space-y-1">
+                <div class="flex items-center justify-between text-[11px] text-gray-500">
+                  <span>{{ task.exportStatus }}</span>
+                  <span>{{ Math.round((task.exportProgress || 0) * 100) }}%</span>
+                </div>
+                <div class="h-1 overflow-hidden rounded bg-black/40">
+                  <div class="h-full rounded bg-cyan-400" :style="{ width: `${Math.round((task.exportProgress || 0) * 100)}%` }"></div>
+                </div>
+              </div>
             </button>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2 border-t border-[#2a2f3a] p-3">
-          <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="isExporting" @click="exportQueue">批量导出</button>
+          <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="isExporting" @click="openExportDialog('queue')">批量导出</button>
           <button class="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 hover:bg-red-500/20" @click="clearQueue">清空队列</button>
         </div>
       </aside>
@@ -305,6 +314,71 @@
 
     <div v-else class="flex flex-1 animate-pulse items-center justify-center text-gray-500">读取本地工程缓存中...</div>
 
+
+    <div v-if="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-[#05070d]/90 p-6 backdrop-blur">
+      <div class="flex max-h-[90vh] w-[min(980px,96vw)] flex-col overflow-hidden rounded border border-[#343b4f] bg-[#111522] shadow-2xl">
+        <div class="flex items-center justify-between border-b border-[#2a2f3a] bg-[#171b2b] px-5 py-4">
+          <div>
+            <h2 class="m-0 text-lg font-bold text-cyan-300">VideoKit 导出队列</h2>
+            <p class="mt-1 text-xs text-gray-500">{{ exportDialogMode === 'queue' ? `批量导出 ${tasks.length} 条任务` : '导出当前选中任务' }}</p>
+          </div>
+          <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-1.5 text-sm text-gray-200 hover:bg-[#2b3146]" :disabled="isExporting" @click="showExportModal = false">关闭</button>
+        </div>
+
+        <div class="grid min-h-0 flex-1 grid-cols-[340px_1fr] overflow-hidden">
+          <div class="space-y-4 overflow-y-auto border-r border-[#2a2f3a] p-4">
+            <Panel title="导出模式">
+              <SelectField v-model="exportDialogMode" label="导出范围" :options="exportScopeOptions" />
+              <SelectField v-model="exportOptions.engine" label="渲染引擎" :options="engineOptions" />
+              <SelectField v-model="exportOptions.format" label="导出格式" :options="formatOptions" />
+              <SelectField v-model="exportOptions.quality" label="导出画质" :options="qualityOptions" />
+              <SelectField v-model="exportOptions.resolution" label="导出分辨率" :options="resolutionOptions" />
+              <SelectField v-model="exportOptions.durationMode" label="时长来源" :options="durationModeOptions" />
+              <SelectField v-model="exportOptions.fitMode" label="视频匹配" :options="fitModeOptions" />
+              <div class="grid grid-cols-2 gap-3">
+                <NumberField v-model="exportOptions.fps" label="帧率" :min="15" :max="60" />
+                <NumberField v-model="exportOptions.customBitrate" label="目标 Mbps" :min="1" />
+              </div>
+              <CheckField v-model="exportOptions.useGpu" label="GPU/硬件编码（后端）" />
+              <CheckField v-model="exportOptions.useMemoryDecoder" label="极速内存解码" />
+            </Panel>
+          </div>
+
+          <div class="flex min-h-0 flex-col p-4">
+            <div class="mb-4 rounded border border-[#303648] bg-black/20 p-3">
+              <div class="mb-2 flex items-center justify-between text-xs text-gray-400">
+                <span>{{ exportStatus }}</span>
+                <span>{{ Math.round(exportProgress * 100) }}%</span>
+              </div>
+              <div class="h-2 overflow-hidden rounded bg-[#30384d]">
+                <div class="h-full rounded bg-blue-500 transition-all" :style="{ width: `${Math.round(exportProgress * 100)}%` }"></div>
+              </div>
+              <p class="mt-2 text-xs text-gray-500">{{ exportPlanSummary }}</p>
+            </div>
+
+            <div class="min-h-0 flex-1 overflow-y-auto rounded border border-[#2a2f3a]">
+              <div v-for="(job, index) in exportJobs" :key="job.id" class="border-b border-[#222838] p-3 last:border-b-0" :class="index === selectedTaskIndex ? 'bg-blue-500/10' : 'bg-[#151a29]'">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold text-white">{{ index + 1 }}. {{ job.baseName }}</div>
+                    <div class="mt-1 truncate text-xs text-gray-500">{{ job.videoName || '无视频' }} / {{ job.audioName || '无音频' }}</div>
+                  </div>
+                  <span class="shrink-0 rounded border border-[#3a4152] px-2 py-1 text-[11px] text-gray-300">{{ job.exportStatus || '等待导出' }}</span>
+                </div>
+                <div class="mt-2 h-1.5 overflow-hidden rounded bg-black/40">
+                  <div class="h-full rounded bg-cyan-400" :style="{ width: `${Math.round((job.exportProgress || 0) * 100)}%` }"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 flex justify-end gap-3">
+              <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-2 text-sm hover:bg-[#2b3146]" :disabled="isExporting" @click="showExportModal = false">取消</button>
+              <button class="rounded bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 disabled:opacity-60" :disabled="isExporting" @click="startExportFromDialog">{{ isExporting ? '导出中...' : '开始导出' }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <BulkModal v-if="showBulkModal" :template-overlay="overlayState" @close="showBulkModal = false" @generate="handleGeneratedTasks" />
   </div>
 </template>
@@ -417,6 +491,9 @@ const previewCanvas = ref(null);
 const videoEl = ref(null);
 const audioEl = ref(null);
 const showBulkModal = ref(false);
+const showExportModal = ref(false);
+const exportDialogMode = ref('current');
+const exportJobs = ref([]);
 const isPlaying = ref(false);
 const isExporting = ref(false);
 const previewTime = ref(0);
@@ -557,7 +634,7 @@ const exportOptions = reactive({
   previewScale: '0.5',
 });
 
-const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '' }]);
+const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '', exportStatus: '等待导出', exportProgress: 0 }]);
 const cloudOwnerId = ref(localStorage.getItem('videohat_owner_id') || 'local-user');
 const cloudStatus = ref('云端未同步');
 const cloudBusy = ref(false);
@@ -572,6 +649,10 @@ const templateTitle = ref('官方 Reels 模板');
 const templateStatus = ref('读取官方模板中...');
 const templateBusy = ref(false);
 
+const exportScopeOptions = [
+  { value: 'current', label: '仅当前任务' },
+  { value: 'queue', label: '全部任务队列' },
+];
 const durationModeOptions = [
   { value: 'auto', label: '自动：音频优先，否则视频' },
   { value: 'audio', label: '按音频时长' },
@@ -622,6 +703,14 @@ const previewScaleOptions = [
   { value: '0.667', label: '均衡清晰 720p' },
   { value: '1', label: '高清预览 1080p' },
 ];
+
+const exportPlanSummary = computed(() => {
+  const scope = exportDialogMode.value === 'queue' ? `${tasks.value.length} 条批量任务` : '当前任务';
+  const format = formatOptions.find((option) => option.value === exportOptions.format)?.label || exportOptions.format;
+  const engine = engineOptions.find((option) => option.value === exportOptions.engine)?.label || exportOptions.engine;
+  const quality = qualityOptions.find((option) => option.value === exportOptions.quality)?.label || exportOptions.quality;
+  return `${scope} · ${engine} · ${format} · ${quality}`;
+});
 const alignOptions = [
   { value: 'center', label: '居中对齐' },
   { value: 'left', label: '左对齐' },
@@ -759,6 +848,8 @@ const syncSelectedTask = () => {
   current.audioUrl = media.audioUrl;
   current.videoDuration = media.videoDuration;
   current.audioDuration = media.audioDuration;
+  current.videoFile = media.videoFile;
+  current.audioFile = media.audioFile;
   current.videoAsset = media.videoAsset;
   current.audioAsset = media.audioAsset;
 };
@@ -766,6 +857,8 @@ const syncSelectedTask = () => {
 const applyTaskToEditor = async (task) => {
   if (!task) return;
   Object.assign(overlayState, createScrollOverlay(task.overlays?.[0] || {}));
+  media.videoFile = task.videoFile || null;
+  media.audioFile = task.audioFile || null;
   media.videoUrl = task.videoUrl || media.videoUrl;
   media.audioUrl = task.audioUrl || media.audioUrl;
   media.videoName = task.videoName || media.videoName;
@@ -785,6 +878,7 @@ const applyTaskToEditor = async (task) => {
     videoEl.value.load();
     await waitForMetadata(videoEl.value);
     media.videoDuration = Number.isFinite(videoEl.value.duration) ? videoEl.value.duration : media.videoDuration;
+    task.videoDuration = media.videoDuration;
     await waitForVideoFrameReady(videoEl.value, 15000);
   }
   if (audioEl.value && media.audioUrl) {
@@ -793,6 +887,7 @@ const applyTaskToEditor = async (task) => {
     audioEl.value.load();
     await waitForMetadata(audioEl.value);
     media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : media.audioDuration;
+    task.audioDuration = media.audioDuration;
   }
   previewTime.value = 0;
   drawPreview();
@@ -818,13 +913,15 @@ const addTaskFromCurrent = () => {
     audioDuration: media.audioDuration,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    exportStatus: '等待导出',
+    exportProgress: 0,
   });
   selectedTaskIndex.value = tasks.value.length - 1;
 };
 
 const clearQueue = () => {
   if (!window.confirm('清空全部任务队列？')) return;
-  tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, videoUrl: media.videoUrl, audioUrl: media.audioUrl, videoAsset: media.videoAsset, audioAsset: media.audioAsset }];
+  tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, videoUrl: media.videoUrl, audioUrl: media.audioUrl, videoFile: media.videoFile, audioFile: media.audioFile, videoAsset: media.videoAsset, audioAsset: media.audioAsset, exportStatus: '等待导出', exportProgress: 0 }];
   selectedTaskIndex.value = 0;
 };
 
@@ -1269,7 +1366,33 @@ const exportFileName = (ext) => {
   return `${safeFilePart(base)}.${ext}`;
 };
 
-const exportCurrentTask = async () => {
+
+const setTaskExportState = (index, status, progress = null) => {
+  const task = tasks.value[index];
+  if (!task) return;
+  task.exportStatus = status;
+  if (progress !== null) task.exportProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+  exportJobs.value = tasks.value.map((item) => ({ ...item }));
+};
+
+const openExportDialog = (mode = 'current') => {
+  syncSelectedTask();
+  exportDialogMode.value = mode;
+  exportJobs.value = tasks.value.map((task, index) => ({
+    ...task,
+    exportStatus: task.exportStatus || (index === selectedTaskIndex.value && mode === 'current' ? '准备导出' : '等待导出'),
+    exportProgress: task.exportProgress || 0,
+  }));
+  exportStatus.value = mode === 'queue' ? `准备批量导出 ${tasks.value.length} 条` : '准备导出当前任务';
+  exportProgress.value = 0;
+  showExportModal.value = true;
+};
+
+const startExportFromDialog = async () => {
+  if (exportDialogMode.value === 'queue') await exportQueue();
+  else await exportCurrentTask({ confirmMp4: true });
+};
+const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   if (isExporting.value) return;
   const canvas = previewCanvas.value;
   if (!canvas) return;
@@ -1282,7 +1405,7 @@ const exportCurrentTask = async () => {
     window.alert('这个导出模式需要后端 FFmpeg/GPU 服务。当前浏览器本地请先选：渲染引擎=本地极速预览导出，导出格式=WebM：本地最快，分辨率=Reels 1080 x 1920。');
     return;
   }
-  if (exportOptions.format === 'mp4' && !window.confirm('浏览器 MP4 会先录 WebM 再用 ffmpeg.wasm 转码，可能要等几分钟。要继续吗？\n\n想最快出片请改选 WebM：本地最快。')) {
+  if (confirmMp4 && exportOptions.format === 'mp4' && !window.confirm('浏览器 MP4 会先录 WebM 再用 ffmpeg.wasm 转码，可能要等几分钟。要继续吗？\n\n想最快出片请改选 WebM：本地最快。')) {
     return;
   }
 
@@ -1291,6 +1414,7 @@ const exportCurrentTask = async () => {
   exportedUrl.value = '';
   exportProgress.value = 0;
   exportStatus.value = '准备素材';
+  setTaskExportState(selectedTaskIndex.value, '准备素材', 0);
   isExporting.value = true;
   wasExporting = true;
   const duration = activeDuration.value;
@@ -1311,10 +1435,12 @@ const exportCurrentTask = async () => {
   }
   if (videoEl.value && media.videoUrl) {
     exportStatus.value = '等待视频帧';
+    setTaskExportState(selectedTaskIndex.value, '等待视频帧', exportProgress.value);
     const frameReady = await waitForVideoFrameReady(videoEl.value, 15000);
     if (!frameReady.ok) {
       window.alert('视频素材还没解码出第一帧，已停止导出。请重新上传 H.264 MP4，或先用“WebM：本地最快”测试预览。');
       exportStatus.value = '视频帧未就绪';
+      setTaskExportState(selectedTaskIndex.value, '视频帧未就绪', 0);
       isExporting.value = false;
       wasExporting = false;
       stopPlayback();
@@ -1345,6 +1471,7 @@ const exportCurrentTask = async () => {
   };
   mediaRecorder.onstop = async () => {
     exportStatus.value = '生成文件';
+    setTaskExportState(selectedTaskIndex.value, '生成文件', exportProgress.value);
     stream.getTracks().forEach((track) => track.stop());
     const type = mimeType || 'video/webm';
     const recordedBlob = new Blob(chunks, { type });
@@ -1360,6 +1487,7 @@ const exportCurrentTask = async () => {
           onProgress: (progress, status) => {
             exportProgress.value = Math.min(0.99, 0.85 + progress * 0.14);
             exportStatus.value = status;
+            setTaskExportState(selectedTaskIndex.value, status, exportProgress.value);
           },
         });
         ext = 'mp4';
@@ -1367,6 +1495,7 @@ const exportCurrentTask = async () => {
         console.error(error);
         window.alert('MP4 转码失败，没有下载 WebM。你可以改选“WebM：本地最快”作为备用，或换 Chrome / Edge 再试。');
         exportStatus.value = 'MP4 转码失败';
+        setTaskExportState(selectedTaskIndex.value, 'MP4 转码失败', exportProgress.value);
         isExporting.value = false;
         wasExporting = false;
         stopPlayback();
@@ -1410,12 +1539,19 @@ const exportCurrentTask = async () => {
 
 const exportQueue = async () => {
   if (isExporting.value) return;
+  if (exportOptions.format === 'mp4' && !window.confirm('批量 MP4 会逐条录 WebM 再转码，可能很慢。要继续吗？')) return;
+  exportProgress.value = 0;
+  exportStatus.value = `准备批量导出 ${tasks.value.length} 条`;
+  exportJobs.value = tasks.value.map((task) => ({ ...task, exportStatus: '等待导出', exportProgress: 0 }));
   for (let i = 0; i < tasks.value.length; i += 1) {
     selectedTaskIndex.value = i;
+    setTaskExportState(i, '载入任务素材', 0.02);
     await applyTaskToEditor(tasks.value[i]);
-    await exportCurrentTask();
+    await exportCurrentTask({ confirmMp4: false });
     await waitUntilExportDone();
+    if ((tasks.value[i].exportProgress || 0) < 1) setTaskExportState(i, tasks.value[i].exportStatus || '导出未完成', tasks.value[i].exportProgress || 0);
   }
+  exportStatus.value = '批量导出完成';
 };
 
 const waitUntilExportDone = () => new Promise((resolve) => {
@@ -1445,6 +1581,8 @@ const createProjectPayload = () => ({
     ...task,
     videoUrl: undefined,
     audioUrl: undefined,
+    videoFile: undefined,
+    audioFile: undefined,
   })),
 });
 
@@ -1458,6 +1596,8 @@ const createLocalDraftPayload = () => ({
     audioDuration: media.audioDuration,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    exportStatus: '等待导出',
+    exportProgress: 0,
   },
   savedAt: new Date().toISOString(),
 });
@@ -1584,6 +1724,8 @@ const applySelectedTemplate = async () => {
     audioDuration: media.audioDuration,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    exportStatus: '等待导出',
+    exportProgress: 0,
   };
   tasks.value = templateTasks.map((task, index) => ({
     ...task,
@@ -1701,6 +1843,8 @@ const loadSelectedCloudProject = async () => {
 const handleGeneratedTasks = (generatedTasks) => {
   syncSelectedTask();
   const inherited = {
+    videoFile: media.videoFile,
+    audioFile: media.audioFile,
     videoUrl: media.videoUrl,
     audioUrl: media.audioUrl,
     videoName: media.videoName,
@@ -1708,7 +1852,18 @@ const handleGeneratedTasks = (generatedTasks) => {
     videoDuration: media.videoDuration,
     audioDuration: media.audioDuration,
   };
-  tasks.value.push(...generatedTasks.map((task) => ({ ...task, ...inherited })));
+  tasks.value.push(...generatedTasks.map((task) => ({
+    ...inherited,
+    ...task,
+    videoUrl: task.videoUrl || inherited.videoUrl,
+    audioUrl: task.audioUrl || inherited.audioUrl,
+    videoName: task.videoName || inherited.videoName,
+    audioName: task.audioName || inherited.audioName,
+    videoDuration: task.videoDuration || inherited.videoDuration,
+    audioDuration: task.audioDuration || inherited.audioDuration,
+    exportStatus: '等待导出',
+    exportProgress: 0,
+  })));
   selectedTaskIndex.value = tasks.value.length - generatedTasks.length;
   applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
   showBulkModal.value = false;
