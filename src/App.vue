@@ -2987,7 +2987,7 @@ const handleGeneratedTasks = (generatedTasks) => {
     musicDuration: media.musicDuration,
     musicVolume: media.musicVolume,
   };
-  tasks.value.push(...generatedTasks.map((task) => ({
+  const nextTasks = generatedTasks.map((task) => ({
     ...inherited,
     ...task,
     videoUrl: task.videoUrl || inherited.videoUrl,
@@ -3002,9 +3002,10 @@ const handleGeneratedTasks = (generatedTasks) => {
     musicVolume: Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : inherited.musicVolume,
     exportStatus: '等待导出',
     exportProgress: 0,
-  })));
-  selectedTaskIndex.value = tasks.value.length - generatedTasks.length;
-  applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
+  }));
+  tasks.value = nextTasks;
+  selectedTaskIndex.value = 0;
+  if (tasks.value[0]) applyTaskToEditor(tasks.value[0]);
   showBulkModal.value = false;
 };
 

@@ -7,7 +7,7 @@
           <p class="m-0 mt-1 text-xs text-gray-500">批量拖入视频、配音、配乐；表格文案会按文件名优先匹配，缺省时按顺序循环。</p>
         </div>
         <div class="flex items-center gap-2">
-          <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-2 text-xs text-gray-200 hover:bg-[#2b3146]" @click="generate">生成任务队列</button>
+          <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-2 text-xs text-gray-200 hover:bg-[#2b3146]" @click="generate">应用表格工程</button>
           <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-2 text-xs text-gray-200 hover:bg-[#2b3146]" @click="emit('close')">关闭</button>
         </div>
       </div>
@@ -254,8 +254,17 @@ const appendRowsForAllMedia = () => {
 
 const normalizeName = (value) => String(value || '').trim().toLowerCase();
 
+const bindingIndex = (template, key) => {
+  const auto = store.createAutoBindings();
+  const explicit = template.bindings?.[key];
+  if (Number.isInteger(explicit) && explicit >= 0 && explicit < store.columns.length) return explicit;
+  return Number.isInteger(auto[key]) ? auto[key] : -1;
+};
+
+const cellValue = (row, index) => (index >= 0 && index < row.length ? String(row[index] || '').trim() : '');
+
 const pickBatchAsset = (pool, row, template, key, rowIndex) => {
-  const boundIndex = template.bindings[key];
+  const boundIndex = bindingIndex(template, key);
   const wanted = boundIndex >= 0 ? normalizeName(row[boundIndex]) : '';
   if (wanted) {
     const exact = pool.find((item) => normalizeName(item.name) === wanted);
@@ -273,6 +282,9 @@ const numericPercent = (value, fallback) => {
 };
 
 const generate = () => {
+  if (typeof store.ensureStandardColumns === 'function') store.ensureStandardColumns();
+  store.templates.forEach((template) => { template.bindings = store.createAutoBindings(); });
+  const titleIndex = store.columnIndex ? store.columnIndex('滚动标题') : -1;
   const validRows = store.rows.filter((row) => row.some((cell) => String(cell).trim() !== ''));
   if (validRows.length === 0) {
     window.alert('表格中没有有效数据！可以先粘贴文案，或拖入素材后写入对应列。');
@@ -289,17 +301,24 @@ const generate = () => {
       const overlay = JSON.parse(JSON.stringify(props.templateOverlay));
       overlay.id = `ov_scroll_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-      for (const [key, colIndex] of Object.entries(template.bindings)) {
-        if (['video', 'audio', 'music', 'musicVolume', 'baseName'].includes(key)) continue;
-        if (colIndex >= 0 && colIndex < store.columns.length && row[colIndex]) overlay[key] = row[colIndex];
-      }
+      ['scroll_title', 'content', 'signature_text'].forEach((key) => {
+        const colIndex = bindingIndex(template, key);
+        const value = cellValue(row, colIndex);
+        if (value) overlay[key] = value;
+      });
 
       const video = pickBatchAsset(batchVideos.value, row, template, 'video', rowIndex);
       const audio = pickBatchAsset(batchAudios.value, row, template, 'audio', rowIndex);
       const music = pickBatchAsset(batchMusic.value, row, template, 'music', rowIndex);
-      const nameIndex = template.bindings.baseName;
-      const volumeIndex = template.bindings.musicVolume;
-      const rowName = nameIndex >= 0 && row[nameIndex] ? row[nameIndex] : `批量生成_Row${rowIndex + 1}_${template.label}`;
+      const nameIndex = bindingIndex(template, 'baseName');
+      const videoIndex = bindingIndex(template, 'video');
+      const audioIndex = bindingIndex(template, 'audio');
+      const musicIndex = bindingIndex(template, 'music');
+      const volumeIndex = bindingIndex(template, 'musicVolume');
+      const rowName = cellValue(row, nameIndex) || cellValue(row, titleIndex) || `批量生成_Row${rowIndex + 1}_${template.label}`;
+      const rowVideoName = cellValue(row, videoIndex);
+      const rowAudioName = cellValue(row, audioIndex);
+      const rowMusicName = cellValue(row, musicIndex);
       const rowMusicVolume = volumeIndex >= 0 ? numericPercent(row[volumeIndex], musicVolume.value) : musicVolume.value;
 
       tasks.push({
@@ -309,9 +328,9 @@ const generate = () => {
         videoUrl: video?.url || '',
         audioUrl: audio?.url || '',
         musicUrl: music?.url || '',
-        videoName: video?.name || '',
-        audioName: audio?.name || '',
-        musicName: music?.name || '',
+        videoName: video?.name || rowVideoName,
+        audioName: audio?.name || rowAudioName,
+        musicName: music?.name || rowMusicName,
         videoFile: video?.file || null,
         audioFile: audio?.file || null,
         musicFile: music?.file || null,
@@ -325,7 +344,7 @@ const generate = () => {
     });
   });
 
-  bulkHint.value = `已生成 ${tasks.length} 条任务：视频 ${batchVideos.value.length} / 配音 ${batchAudios.value.length} / 配乐 ${batchMusic.value.length}。`;
+  bulkHint.value = `已按当前批量表格工程生成 ${tasks.length} 条任务；外部任务队列会同步为这张表，不再累加旧任务。`;
   emit('generate', tasks);
 };
 </script>
