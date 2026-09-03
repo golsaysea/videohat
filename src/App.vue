@@ -17,6 +17,7 @@
         </div>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showSettingsModal = true">设置</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showTemplateLibrary = true">工程模板库</button>
+        <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showLocalMediaModal = true">本地素材库</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showBulkModal = true">批量表格</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="downloadProject">保存工程 JSON</button>
         <button class="rounded bg-blue-600 px-5 py-1.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500" :disabled="isExporting" @click="openExportDialog('current')">
@@ -60,24 +61,9 @@
           <p class="text-xs leading-relaxed text-gray-500">{{ localDraftStatus }}</p>
         </div>
 
-        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">本地素材文件夹缓存</h3>
-            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="localMediaBusy" @click="restoreLocalMediaFolder">恢复</button>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy" @click="selectLocalMediaFolder">授权素材路径</button>
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="localMediaBusy || !localMediaItems.length" @click="scanLocalMediaDirectory">刷新列表</button>
-          </div>
-          <p class="text-xs leading-relaxed text-gray-500">{{ localMediaStatus }}</p>
-          <div v-if="localMediaItems.length" class="max-h-40 space-y-2 overflow-y-auto">
-            <div v-for="item in localMediaItems" :key="item.name" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
-              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
-              <div class="mt-1 text-[11px] text-gray-500">{{ item.cacheName ? `缓存：${item.cacheName}` : '未生成旁路 MP4 缓存' }}</div>
-              <button class="mt-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100 hover:bg-cyan-500/20" :disabled="localMediaBusy" @click="useLocalMediaForCurrent(item)">用于当前任务</button>
-            </div>
-          </div>
-        </div>
+        <button class="mx-4 mb-4 rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20" @click="showLocalMediaModal = true">
+          打开本地素材库 · {{ localMediaItems.length }} 个缓存
+        </button>
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
             <span class="text-xs font-bold text-gray-500">任务队列</span>
@@ -578,6 +564,49 @@
       </div>
     </div>
 
+    <div v-if="showLocalMediaModal" class="fixed inset-0 z-50 flex items-center justify-center bg-[#05070d]/90 p-6 backdrop-blur">
+      <div class="flex max-h-[88vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded border border-[#343b4f] bg-[#111522] shadow-2xl">
+        <div class="flex shrink-0 items-center justify-between border-b border-[#2a2f3a] bg-[#171b2b] px-5 py-4">
+          <div>
+            <h2 class="m-0 text-lg font-bold text-cyan-300">本地素材库</h2>
+            <p class="mt-1 text-xs text-gray-500">授权本机素材文件夹，刷新后可匹配旁路 MP4 缓存，不会自动上传到 R2。</p>
+          </div>
+          <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-1.5 text-sm text-gray-200 hover:bg-[#2b3146]" @click="showLocalMediaModal = false">关闭</button>
+        </div>
+        <div class="grid min-h-0 flex-1 grid-cols-[260px_1fr] gap-4 overflow-hidden p-5">
+          <aside class="space-y-3 rounded border border-[#303648] bg-black/20 p-4">
+            <div class="grid grid-cols-2 gap-2">
+              <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146] disabled:opacity-50" :disabled="localMediaBusy" @click="selectLocalMediaFolder">授权路径</button>
+              <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146] disabled:opacity-50" :disabled="localMediaBusy" @click="restoreLocalMediaFolder">恢复授权</button>
+            </div>
+            <button class="w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50" :disabled="localMediaBusy || !localMediaItems.length" @click="scanLocalMediaDirectory">刷新素材列表</button>
+            <div class="grid grid-cols-2 gap-2 text-xs text-gray-400">
+              <div class="rounded border border-[#2a2f3a] bg-black/30 p-2 text-center">
+                <div class="text-lg font-bold text-white">{{ localMediaItems.filter(item => item.kind === 'video').length }}</div>
+                <div>视频</div>
+              </div>
+              <div class="rounded border border-[#2a2f3a] bg-black/30 p-2 text-center">
+                <div class="text-lg font-bold text-white">{{ localMediaItems.filter(item => item.kind === 'audio').length }}</div>
+                <div>音频</div>
+              </div>
+            </div>
+            <p class="text-xs leading-relaxed text-gray-500">{{ localMediaStatus }}</p>
+          </aside>
+          <section class="min-h-0 overflow-y-auto rounded border border-[#303648] bg-black/20 p-3">
+            <div v-if="localMediaItems.length" class="space-y-2">
+              <div v-for="item in localMediaItems" :key="item.name" class="flex items-center justify-between gap-3 rounded border border-[#2a2f3a] bg-[#151a2a] p-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
+                  <div class="mt-1 truncate text-[11px] text-gray-500">{{ item.cacheName ? `缓存：${item.cacheName}` : '未生成旁路 MP4 缓存' }}</div>
+                </div>
+                <button class="shrink-0 rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50" :disabled="localMediaBusy" @click="useLocalMediaForCurrent(item)">用于当前任务</button>
+              </div>
+            </div>
+            <div v-else class="flex h-full min-h-56 items-center justify-center rounded border border-dashed border-[#3a4152] text-sm text-gray-500">暂无本地素材缓存，先授权路径并刷新列表。</div>
+          </section>
+        </div>
+      </div>
+    </div>
     <BulkModal v-if="showBulkModal" :template-overlay="overlayState" @close="showBulkModal = false" @generate="handleGeneratedTasks" />
   </div>
 </template>
@@ -823,6 +852,7 @@ const audioFileInput = ref(null);
 const showBulkModal = ref(false);
 const showSettingsModal = ref(false);
 const showTemplateLibrary = ref(false);
+const showLocalMediaModal = ref(false);
 const showExportModal = ref(false);
 const exportDialogMode = ref('current');
 const exportJobs = ref([]);
