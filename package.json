@@ -10,7 +10,8 @@
     "db:migrate:local": "wrangler d1 migrations apply videohat-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply videohat-db --remote",
     "pages:dev": "npm run build && wrangler pages dev dist",
-    "pages:deploy": "npm run build && wrangler pages deploy dist"
+    "pages:deploy": "npm run build && wrangler pages deploy dist",
+    "fonts:seed": "node scripts/seed-open-fonts.mjs"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",

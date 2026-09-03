@@ -15,6 +15,7 @@
             <div class="h-full rounded-full bg-blue-500 transition-all" :style="{ width: `${Math.round(exportProgress * 100)}%` }"></div>
           </div>
         </div>
+        <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showSettingsPanel = !showSettingsPanel">{{ showSettingsPanel ? '收起设置' : '设置' }}</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showTemplateLibrary = true">工程模板库</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showBulkModal = true">批量表格</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="downloadProject">保存工程 JSON</button>
@@ -77,6 +78,7 @@
             </div>
           </div>
         </div>
+        <div v-if="showSettingsPanel" class="min-h-0 overflow-y-auto border-b border-[#2a2f3a]">
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
           <div class="flex items-center justify-between">
             <h3 class="m-0 text-sm font-bold text-cyan-300">Google Drive 媒体池</h3>
@@ -115,7 +117,10 @@
             <option value="">选择云端工程</option>
             <option v-for="project in cloudProjects" :key="project.id" :value="project.id">{{ project.title }} · {{ formatCloudTime(project.updatedAt) }}</option>
           </select>
-          <button v-if="selectedCloudProjectId" class="w-full rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
+          <div v-if="selectedCloudProjectId" class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
+            <button class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="cloudBusy" @click="deleteSelectedCloudProject">删除工程</button>
+          </div>
         </div>
 
         <div class="space-y-3 border-b border-[#2a2f3a] p-4">
@@ -137,7 +142,10 @@
               <div class="h-full rounded bg-blue-400 transition-all" :style="{ width: `${Math.round(templateProgress * 100)}%` }"></div>
             </div>
           </div>
-          <button v-if="selectedTemplateId" class="w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用工程模板</button>
+          <div v-if="selectedTemplateId" class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用模板</button>
+            <button v-if="isAdminMode" class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="templateBusy || !adminToken" @click="deleteSelectedOfficialTemplate">删除模板</button>
+          </div>
           <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
             <label class="space-y-1">
               <span class="block text-xs text-amber-200">管理员 Token</span>
@@ -172,6 +180,7 @@
               {{ font.family }}
             </button>
           </div>
+        </div>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
@@ -480,6 +489,7 @@
           </section>
           <aside class="space-y-3">
             <button class="w-full rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-60" :disabled="!selectedTemplateId || templateBusy" @click="applySelectedTemplate">套用选中工程</button>
+            <button v-if="isAdminMode && selectedTemplateId" class="w-full rounded border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200 hover:bg-red-500/20 disabled:opacity-60" :disabled="templateBusy || !adminToken" @click="deleteSelectedOfficialTemplate">删除这个官方工程</button>
             <p class="min-h-10 text-xs leading-relaxed text-gray-500">{{ templateStatus }}</p>
             <div v-if="templateProgress > 0 || templateBusy" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
               <div class="flex items-center justify-between text-[11px] text-blue-100">
@@ -514,7 +524,7 @@ import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRen
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeInputVideoToMp4, transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
-import { assetUrl, listCloudFonts, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset, uploadCloudFont } from './utils/cloudProjectApi.js';
+import { assetUrl, deleteCloudProject, deleteOfficialTemplate, listCloudFonts, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset, uploadCloudFont } from './utils/cloudProjectApi.js';
 import { downloadDriveFile, isGoogleDriveConfigured, openDrivePicker, requestDriveToken } from './utils/googleDriveMedia.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';
@@ -681,6 +691,7 @@ const audioEl = ref(null);
 const videoFileInput = ref(null);
 const audioFileInput = ref(null);
 const showBulkModal = ref(false);
+const showSettingsPanel = ref(false);
 const showTemplateLibrary = ref(false);
 const showExportModal = ref(false);
 const exportDialogMode = ref('current');
@@ -2645,6 +2656,50 @@ const uploadCurrentAssets = async () => {
   }
 };
 
+const deleteSelectedCloudProject = async () => {
+  const project = cloudProjects.value.find((item) => item.id === selectedCloudProjectId.value);
+  if (!project) return;
+  if (!window.confirm(`确定删除云端工程“${project.title}”？这只删除工程记录，不会删除 R2 里的音频/视频素材。`)) return;
+  persistCloudOwner();
+  cloudBusy.value = true;
+  cloudStatus.value = `删除工程：${project.title}`;
+  try {
+    await deleteCloudProject(cloudOwnerId.value, project.id);
+    if (currentCloudProjectId.value === project.id) currentCloudProjectId.value = '';
+    selectedCloudProjectId.value = '';
+    cloudStatus.value = `已删除工程：${project.title}`;
+    await refreshCloudProjects();
+  } catch (error) {
+    console.error(error);
+    cloudStatus.value = `删除失败：${error.message}`;
+  } finally {
+    cloudBusy.value = false;
+  }
+};
+
+const deleteSelectedOfficialTemplate = async () => {
+  const template = officialTemplates.value.find((item) => item.id === selectedTemplateId.value);
+  if (!template) return;
+  persistAdminToken();
+  persistCloudOwner();
+  if (!window.confirm(`确定删除官方工程“${template.title}”？这只删除模板记录，不会删除 R2 里的音频素材。`)) return;
+  templateBusy.value = true;
+  templateProgress.value = 0.25;
+  templateStatus.value = `删除官方工程：${template.title}`;
+  try {
+    await deleteOfficialTemplate(cloudOwnerId.value, adminToken.value, template.id);
+    selectedTemplateId.value = '';
+    templateProgress.value = 1;
+    templateStatus.value = `已删除官方工程：${template.title}`;
+    await refreshOfficialTemplates();
+  } catch (error) {
+    console.error(error);
+    templateStatus.value = `模板删除失败：${error.message}`;
+  } finally {
+    templateBusy.value = false;
+    if (templateProgress.value >= 1) window.setTimeout(() => { templateProgress.value = 0; }, 900);
+  }
+};
 const loadSelectedCloudProject = async () => {
   const project = cloudProjects.value.find((item) => item.id === selectedCloudProjectId.value);
   if (!project?.payload) return;

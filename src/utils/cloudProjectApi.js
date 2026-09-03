@@ -38,6 +38,13 @@ export const saveCloudProject = async (ownerId, project) => {
   return response.json();
 };
 
+export const deleteCloudProject = async (ownerId, projectId) => {
+  const response = await assertOk(await fetch(endpoint(`/api/projects/${encodeURIComponent(projectId)}`), {
+    method: 'DELETE',
+    headers: headersFor(ownerId),
+  }));
+  return response.json();
+};
 export const uploadCloudAsset = async (ownerId, file, { kind = 'asset', projectId = '' } = {}) => {
   const params = new URLSearchParams({ kind, fileName: file.name });
   if (projectId) params.set('projectId', projectId);
