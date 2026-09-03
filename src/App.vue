@@ -503,6 +503,7 @@
           <div class="grid grid-cols-2 gap-2">
             <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="saveProjectOnline">保存云端</button>
             <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="uploadCurrentAssets">手动上传素材到 R2</button>
+            <button v-if="isAdminMode" class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="cloudBusy || !adminToken" @click="clearOwnerMediaAssets">清空R2素材</button>
           </div>
           <p class="min-h-5 text-xs text-gray-500">{{ cloudStatus }}</p>
           <select v-if="cloudProjects.length" v-model="selectedCloudProjectId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
@@ -590,7 +591,7 @@ import { createScrollOverlay, drawScrollOverlay } from './utils/scrollOverlayRen
 import { ReelsOverlay } from './utils/reels-overlay.js';
 import { WebAssetPool } from './utils/WebAssetPool.js';
 import { transcodeInputVideoToMp4, transcodeWebmToMp4 } from './utils/ffmpegTranscoder.js';
-import { assetUrl, deleteCloudProject, deleteOfficialTemplate, listCloudFonts, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset, uploadCloudFont } from './utils/cloudProjectApi.js';
+import { assetUrl, deleteCloudProject, deleteOfficialTemplate, deleteOwnerMediaAssets, listCloudFonts, listCloudProjects, listOfficialTemplates, saveCloudProject, saveOfficialTemplate, uploadCloudAsset, uploadCloudFont } from './utils/cloudProjectApi.js';
 import { downloadDriveFile, isGoogleDriveConfigured, openDrivePicker, requestDriveToken } from './utils/googleDriveMedia.js';
 
 const controlInputClass = 'w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500';

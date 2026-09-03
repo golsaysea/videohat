@@ -70,7 +70,14 @@ export const uploadCloudFont = async (ownerId, adminToken, file) => {
   }));
   return response.json();
 };
-export const assetUrl = (ownerId, objectKey) => {
+
+export const deleteOwnerMediaAssets = async (ownerId, adminToken) => {
+  const response = await assertOk(await fetch(endpoint('/api/assets'), {
+    method: 'DELETE',
+    headers: adminHeadersFor(ownerId, adminToken),
+  }));
+  return response.json();
+};export const assetUrl = (ownerId, objectKey) => {
   const params = new URLSearchParams({ key: objectKey, ownerId: ownerId || 'local-user' });
   return endpoint(`/api/assets?${params}`);
 };

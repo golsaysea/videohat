@@ -372,7 +372,28 @@ const uploadAsset = async (request, env) => withDatabase(env, async () => {
   return ok(env, { asset: { id, ownerId, projectId, kind, fileName, objectKey, contentType, size } }, 201);
 }, 'Asset upload');
 
-const getAsset = async (request, env) => withDatabase(env, async () => {
+
+const deleteOwnerMediaAssets = async (request, env) => {
+  const denied = requireAdmin(request, env);
+  if (denied) return denied;
+  return withDatabase(env, async () => {
+    const bucket = mediaBucket(env);
+    if (!bucket) return fail(env, 'Media bucket binding missing', 500);
+    const ownerId = await ownerFromRequest(request, env);
+    const { results } = await env.DB.prepare(`
+      SELECT object_key
+      FROM assets
+      WHERE owner_id = ? AND kind != 'font'
+    `).bind(ownerId).all();
+    let deletedAssets = 0;
+    for (const row of results) {
+      await bucket.delete(row.object_key);
+      deletedAssets += 1;
+    }
+    await env.DB.prepare(`DELETE FROM assets WHERE owner_id = ? AND kind != 'font'`).bind(ownerId).run();
+    return ok(env, { ok: true, ownerId, deletedAssets });
+  }, 'Asset cleanup');
+};const getAsset = async (request, env) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
   const url = new URL(request.url);
   const key = url.searchParams.get('key');
@@ -410,6 +431,7 @@ export default {
       if (path.startsWith('/api/projects/') && request.method === 'GET') return getProject(request, env, decodeURIComponent(path.split('/').pop()));
       if (path.startsWith('/api/projects/') && request.method === 'DELETE') return deleteProject(request, env, decodeURIComponent(path.split('/').pop()));
       if (path === '/api/assets' && request.method === 'POST') return uploadAsset(request, env);
+      if (path === '/api/assets' && request.method === 'DELETE') return deleteOwnerMediaAssets(request, env);
       if (path === '/api/assets' && request.method === 'GET') return getAsset(request, env);
 
       return fail(env, 'Not found', 404);
