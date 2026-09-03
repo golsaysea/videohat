@@ -86,7 +86,7 @@
               <option value="overwrite">覆盖，从第 1 行开始写入</option>
               <option value="append">添加新行，全部作为新任务</option>
             </select>
-            <button class="mt-3 w-full rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-500/20" @click="appendRowsForAllMedia">按最大素材数量补齐行数</button>
+            <button class="mt-3 w-full rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-500/20" @click="appendRowsForAllMedia">同步到素材数量行</button>
           </div>
         </aside>
 
@@ -278,11 +278,26 @@ const applyMaterialToTable = (kind, direction = 'asc') => {
   bulkHint.value = `已按“${materialApplyMode.value === 'fill' ? '补全空位' : materialApplyMode.value === 'overwrite' ? '覆盖' : '添加新行'} / ${direction === 'desc' ? '倒序' : '正序'}”写入 ${written} 个${poolLabels[kind]}素材。`;
 };
 
+const writePoolColumnByIndex = (kind, records) => {
+  const col = ensureColumn(columnNames[kind]);
+  records.forEach((item, rowIndex) => {
+    ensureRows(rowIndex + 1);
+    store.rows[rowIndex][col] = item.name;
+    if (kind === 'music') writeMusicVolume(rowIndex, true);
+  });
+};
+
 const appendRowsForAllMedia = () => {
-  const target = Math.max(batchVideos.value.length, batchAudios.value.length, batchMusic.value.length, store.rows.length);
-  ensureRows(target || 1);
+  const videos = naturalSortRecords(batchVideos.value);
+  const audios = naturalSortRecords(batchAudios.value);
+  const music = naturalSortRecords(batchMusic.value);
+  const target = Math.max(videos.length, audios.length, music.length);
+  store.setRowCount(target);
+  writePoolColumnByIndex('video', videos);
+  writePoolColumnByIndex('audio', audios);
+  writePoolColumnByIndex('music', music);
   refreshTemplateBindings();
-  bulkHint.value = `已补齐到 ${store.rows.length} 行，后续生成队列会按素材顺序自动循环匹配。`;
+  bulkHint.value = `已同步到 ${store.rows.length} 行，并按正序写入视频/配音/配乐列。`;
 };
 
 const normalizeName = (value) => String(value || '').trim().toLowerCase();

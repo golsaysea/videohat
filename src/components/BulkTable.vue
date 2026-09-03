@@ -9,8 +9,8 @@
         <input class="hidden" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" @change="importTableFile" />
       </label>
       <button class="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-200 hover:bg-blue-500/20" @click="ensureStandardColumns">恢复标准列</button>
-      <button class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20" :disabled="!selectedRows.size" @click="clearSelectedRows">清空选中行 {{ selectedRows.size ? '(' + selectedRows.size + ')' : '' }}</button>
-      <button class="rounded border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-200 hover:bg-purple-500/20" @click="trimEmptyRows">清理空白行</button>
+      <button class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20" :disabled="!selectedRows.size" @click="clearSelectedRows">删除选中行 {{ selectedRows.size ? '(' + selectedRows.size + ')' : '' }}</button>
+      <button class="rounded border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-200 hover:bg-purple-500/20" @click="trimEmptyRows">删除空白行</button>
       <span class="text-xs text-gray-500">工程列固定；从任意格粘贴多行会自动新增项目行</span>
       <button class="ml-auto rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20" @click="store.clearAll()">清空全部内容</button>
     </div>
@@ -49,6 +49,7 @@
                 <span class="w-5 text-right">{{ ri + 1 }}</span>
                 <button class="rounded px-1 text-[10px] text-blue-300 opacity-60 hover:bg-blue-500/15 hover:opacity-100" title="在下方新增一行" @click="store.addRow(true, ri)">+</button>
                 <button class="rounded px-1 text-[10px] text-amber-300 opacity-60 hover:bg-amber-500/15 hover:opacity-100" title="清空这一行" @click="clearRow(ri)">清</button>
+                <button class="rounded px-1 text-[10px] text-red-400 opacity-60 hover:bg-red-500/15 hover:opacity-100" title="删除这一项目行" @click="deleteRow(ri)">删</button>
               </div>
             </td>
             <td v-for="(col, ci) in store.columns" :key="`td-${ri}-${ci}`" class="border border-[#222235] p-0" :class="isLongTextColumn(col.name) ? 'h-20' : 'h-10'">
@@ -165,9 +166,9 @@ const toggleAllRows = () => {
 
 const clearSelectedRows = () => {
   if (!selectedRows.value.size) return;
-  if (!window.confirm('清空选中的 ' + selectedRows.value.size + ' 行？固定列和行位置会保留。')) return;
-  Array.from(selectedRows.value).forEach((rowIndex) => store.clearRow(rowIndex));
-  tableHint.value = '已清空选中的 ' + selectedRows.value.size + ' 行。';
+  if (!window.confirm('删除选中的 ' + selectedRows.value.size + ' 个项目行？固定列会保留。')) return;
+  Array.from(selectedRows.value).sort((a, b) => b - a).forEach((rowIndex) => store.removeRow(rowIndex));
+  tableHint.value = '已删除选中的项目行。';
   selectedRows.value = new Set();
 };
 
@@ -175,7 +176,14 @@ const trimEmptyRows = () => {
   const before = store.rows.length;
   store.trimEmptyRows();
   selectedRows.value = new Set();
-  tableHint.value = '已清理 ' + (before - store.rows.length) + ' 个空白项目行，至少保留 15 行。';
+  tableHint.value = '已删除 ' + (before - store.rows.length) + ' 个空白项目行。';
+};
+
+const deleteRow = (rowIndex) => {
+  if (!window.confirm('删除第 ' + (rowIndex + 1) + ' 个项目行？')) return;
+  store.removeRow(rowIndex);
+  selectedRows.value = new Set(Array.from(selectedRows.value).filter((index) => index !== rowIndex).map((index) => (index > rowIndex ? index - 1 : index)));
+  tableHint.value = '已删除第 ' + (rowIndex + 1) + ' 个项目行。';
 };
 
 const clearRow = (rowIndex) => {

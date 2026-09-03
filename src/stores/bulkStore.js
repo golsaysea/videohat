@@ -27,9 +27,6 @@ export const useBulkStore = defineStore('bulk', {
 
   actions: {
     initTable() {
-      if (this.rows.length === 0) {
-        for (let i = 0; i < 15; i += 1) this.addRow(false);
-      }
       if (this.templates.length === 0) this.addTemplate(false);
       this.ensureStandardColumns();
       this.saveDraft();
@@ -77,9 +74,16 @@ export const useBulkStore = defineStore('bulk', {
       this.saveDraft();
     },
 
-    trimEmptyRows(minRows = 15) {
+    trimEmptyRows() {
       this.rows = this.rows.filter((row) => row.some((cell) => String(cell || '').trim()));
-      while (this.rows.length < minRows) this.rows.push(new Array(this.columns.length).fill(''));
+      this.normalizeRows();
+      this.saveDraft();
+    },
+
+    setRowCount(count) {
+      const target = Math.max(0, Number(count) || 0);
+      while (this.rows.length < target) this.rows.push(new Array(this.columns.length).fill(''));
+      if (this.rows.length > target) this.rows.length = target;
       this.normalizeRows();
       this.saveDraft();
     },
@@ -95,7 +99,8 @@ export const useBulkStore = defineStore('bulk', {
     },
 
     removeRow(index) {
-      this.clearRow(index);
+      this.rows.splice(index, 1);
+      this.saveDraft();
     },
 
     updateCell(rowIndex, columnIndex, value) {
