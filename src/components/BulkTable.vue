@@ -30,16 +30,21 @@
               <div class="flex items-center gap-1">
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px]" :class="columnBadgeClass(col.name)">{{ columnIcon(col.name) }}</span>
                 <input v-model="col.name" class="min-w-0 flex-1 bg-transparent px-2 py-1 text-sm text-white outline-none focus:border-b focus:border-purple-500" placeholder="列名" @blur="store.saveDraft" />
-                <button class="px-2 font-bold text-red-500 hover:text-red-400" @click="store.removeColumn(ci)">x</button>
+                <button class="rounded px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/15" title="清空这一列" @click="clearColumn(ci)">清</button>
+                <button class="rounded px-1.5 py-0.5 text-[10px] text-red-400 hover:bg-red-500/15" title="删除这一列" @click="store.removeColumn(ci)">删</button>
               </div>
             </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, ri) in store.rows" :key="`tr-${ri}`" class="group hover:bg-[#121222]">
-            <td class="relative border border-[#222235] bg-[#0a0a14] text-center text-xs text-gray-600">
-              {{ ri + 1 }}
-              <button class="absolute inset-0 flex items-center justify-center bg-red-500/80 font-bold text-white opacity-0 group-hover:opacity-100" @click="store.removeRow(ri)">x</button>
+            <td class="border border-[#222235] bg-[#0a0a14] px-1 text-center text-xs text-gray-600">
+              <div class="flex items-center justify-center gap-1">
+                <span class="w-5 text-right">{{ ri + 1 }}</span>
+                <button class="rounded px-1 text-[10px] text-blue-300 opacity-60 hover:bg-blue-500/15 hover:opacity-100" title="在下方新增一行" @click="store.addRow(true, ri)">+</button>
+                <button class="rounded px-1 text-[10px] text-amber-300 opacity-60 hover:bg-amber-500/15 hover:opacity-100" title="清空这一行" @click="clearRow(ri)">清</button>
+                <button class="rounded px-1 text-[10px] text-red-400 opacity-60 hover:bg-red-500/15 hover:opacity-100" title="删除这一行" @click="store.removeRow(ri)">删</button>
+              </div>
             </td>
             <td v-for="(col, ci) in store.columns" :key="`td-${ri}-${ci}`" class="border border-[#222235] p-0" :class="isLongTextColumn(col.name) ? 'h-20' : 'h-10'">
               <textarea
@@ -47,6 +52,8 @@
                 :value="row[ci]"
                 class="h-20 w-full resize-none border-none bg-transparent px-3 py-2 text-sm leading-relaxed text-gray-300 outline-none focus:bg-purple-900/30 focus:ring-1 focus:ring-purple-500"
                 placeholder="粘贴正文文案..."
+                @focus="selectedCell = { row: ri, column: ci }"
+                @paste="event => pasteIntoCell(event, ri, ci)"
                 @input="event => store.updateCell(ri, ci, event.target.value)"
               ></textarea>
               <div v-else-if="isMediaColumn(col.name)" class="flex h-full items-center gap-2 px-2">
@@ -55,6 +62,8 @@
                   :value="row[ci]"
                   class="h-full min-w-0 flex-1 border-none bg-transparent text-sm text-gray-200 outline-none focus:bg-purple-900/30 focus:ring-1 focus:ring-purple-500"
                   :placeholder="placeholderFor(col.name)"
+                  @focus="selectedCell = { row: ri, column: ci }"
+                  @paste="event => pasteIntoCell(event, ri, ci)"
                   @input="event => store.updateCell(ri, ci, event.target.value)"
                 />
               </div>
@@ -63,6 +72,8 @@
                 :value="row[ci]"
                 class="h-full w-full border-none bg-transparent px-3 text-sm text-gray-300 outline-none focus:bg-purple-900/30 focus:ring-1 focus:ring-purple-500"
                 :placeholder="placeholderFor(col.name)"
+                @focus="selectedCell = { row: ri, column: ci }"
+                @paste="event => pasteIntoCell(event, ri, ci)"
                 @input="event => store.updateCell(ri, ci, event.target.value)"
               />
             </td>
@@ -79,6 +90,7 @@ import { useBulkStore } from '../stores/bulkStore';
 
 const store = useBulkStore();
 const tableHint = ref('');
+const selectedCell = ref({ row: 0, column: 0 });
 const STANDARD_NAMES = ['任务名称', '视频文件名', '音频文件名', '配乐文件名', '配乐音量%', '滚动标题', '滚动正文', '署名'];
 
 const columnClass = (name) => {
@@ -138,6 +150,19 @@ const handleAddColumn = () => {
   if (name?.trim()) store.addColumn(name.trim());
 };
 
+const clearRow = (rowIndex) => {
+  if (!window.confirm('清空这一行？')) return;
+  store.clearRow(rowIndex);
+  tableHint.value = '已清空第 ' + (rowIndex + 1) + ' 行。';
+};
+
+const clearColumn = (columnIndex) => {
+  const name = store.columns[columnIndex]?.name || '这一列';
+  if (!window.confirm('清空“' + name + '”这一列？')) return;
+  store.clearColumn(columnIndex);
+  tableHint.value = '已清空列：' + name + '。';
+};
+
 const parseCsvLine = (line, delimiter) => {
   const cells = [];
   let current = '';
@@ -192,8 +217,8 @@ const ensureRow = (index) => {
   store.normalizeRows();
 };
 
-const writeRowsIntoColumns = (rows, mapByIndex) => {
-  let rowIndex = nextWritableRow();
+const writeRowsIntoColumns = (rows, mapByIndex, startRow = nextWritableRow()) => {
+  let rowIndex = startRow;
   rows.forEach((sourceRow) => {
     ensureRow(rowIndex);
     Object.entries(mapByIndex).forEach(([sourceIndex, targetName]) => {
@@ -204,13 +229,13 @@ const writeRowsIntoColumns = (rows, mapByIndex) => {
   });
 };
 
-const applyParsedRows = ({ rows, kind }) => {
+const applyParsedRows = ({ rows, kind }, startRow = null) => {
   if (!rows.length) return;
   ensureStandardColumns();
 
   if (kind === 'copy' || rows[0].length === 1) {
-    const start = nextWritableRow();
-    writeRowsIntoColumns(rows, { 0: '滚动正文' });
+    const start = Number.isInteger(startRow) ? startRow : nextWritableRow();
+    writeRowsIntoColumns(rows, { 0: '滚动正文' }, start);
     const nameIndex = store.columnIndex('任务名称');
     const contentIndex = store.columnIndex('滚动正文');
     rows.forEach((_, offset) => {
@@ -238,7 +263,7 @@ const applyParsedRows = ({ rows, kind }) => {
     } else {
       ['任务名称', '视频文件名', '音频文件名', '配乐文件名', '配乐音量%', '滚动标题', '滚动正文', '署名'].forEach((name, index) => { map[index] = name; });
     }
-    writeRowsIntoColumns(dataRows, map);
+    writeRowsIntoColumns(dataRows, map, Number.isInteger(startRow) ? startRow : nextWritableRow());
     tableHint.value = '已按表格导入，共 ' + dataRows.length + ' 行；标准素材列已保留。';
   }
 
@@ -253,6 +278,33 @@ const pasteClipboardText = async (promptText) => {
   } catch (error) {
     return window.prompt(promptText, '') || '';
   }
+};
+
+const pasteIntoCell = (event, rowIndex, columnIndex) => {
+  const text = event.clipboardData?.getData('text/plain') || '';
+  const parsed = parseTableText(text);
+  if (!text || parsed.rows.length <= 1) return;
+  event.preventDefault();
+  ensureStandardColumns();
+  if (parsed.kind === 'table' && parsed.rows[0]?.length > 1) {
+    const sourceRows = guessHeader(parsed.rows[0]) ? parsed.rows.slice(1) : parsed.rows;
+    sourceRows.forEach((sourceRow, offset) => {
+      ensureRow(rowIndex + offset);
+      sourceRow.forEach((cell, sourceColumn) => {
+        const targetColumn = columnIndex + sourceColumn;
+        if (targetColumn < store.columns.length) store.rows[rowIndex + offset][targetColumn] = cell;
+      });
+    });
+    tableHint.value = '已从当前格粘贴表格并自动新增 ' + sourceRows.length + ' 行。';
+  } else {
+    parsed.rows.forEach((sourceRow, offset) => {
+      ensureRow(rowIndex + offset);
+      store.rows[rowIndex + offset][columnIndex] = sourceRow[0] || '';
+    });
+    tableHint.value = '已从当前格向下粘贴 ' + parsed.rows.length + ' 条内容。';
+  }
+  store.templates.forEach((template) => { template.bindings = store.createAutoBindings(); });
+  store.saveDraft();
 };
 
 const pasteSmartCopy = async () => {

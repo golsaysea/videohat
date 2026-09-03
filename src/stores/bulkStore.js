@@ -57,9 +57,24 @@ export const useBulkStore = defineStore('bulk', {
       });
     },
 
-    addRow(save = true) {
-      this.rows.push(new Array(this.columns.length).fill(''));
+    addRow(save = true, afterIndex = null) {
+      const row = new Array(this.columns.length).fill('');
+      if (Number.isInteger(afterIndex)) this.rows.splice(afterIndex + 1, 0, row);
+      else this.rows.push(row);
       if (save) this.saveDraft();
+    },
+
+    clearRow(index) {
+      if (!this.rows[index]) return;
+      this.rows[index] = new Array(this.columns.length).fill('');
+      this.saveDraft();
+    },
+
+    clearColumn(index) {
+      this.rows.forEach((row) => {
+        if (index >= 0 && index < row.length) row[index] = '';
+      });
+      this.saveDraft();
     },
 
     addColumn(name = '新列', type = 'text') {
