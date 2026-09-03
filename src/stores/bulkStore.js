@@ -77,6 +77,13 @@ export const useBulkStore = defineStore('bulk', {
       this.saveDraft();
     },
 
+    trimEmptyRows(minRows = 15) {
+      this.rows = this.rows.filter((row) => row.some((cell) => String(cell || '').trim()));
+      while (this.rows.length < minRows) this.rows.push(new Array(this.columns.length).fill(''));
+      this.normalizeRows();
+      this.saveDraft();
+    },
+
     addColumn(name = '新列', type = 'text') {
       this.columns.push({ name, type });
       this.normalizeRows();

@@ -1,6 +1,6 @@
 <template>
   <div class="flex h-full flex-col bg-[#0a0a14]">
-    <div class="flex shrink-0 items-center gap-2 border-b border-[#2a2a3a] bg-[#121222] p-3">
+    <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#2a2a3a] bg-[#121222] p-3">
       <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="store.addRow()">添加项目行</button>
       <button class="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-500/20" @click="pasteSmartCopy">智能粘贴文案</button>
       <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="pasteFromClipboard">粘贴表格</button>
@@ -9,6 +9,8 @@
         <input class="hidden" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" @change="importTableFile" />
       </label>
       <button class="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-200 hover:bg-blue-500/20" @click="ensureStandardColumns">恢复标准列</button>
+      <button class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20" :disabled="!selectedRows.size" @click="clearSelectedRows">清空选中行 {{ selectedRows.size ? '(' + selectedRows.size + ')' : '' }}</button>
+      <button class="rounded border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-200 hover:bg-purple-500/20" @click="trimEmptyRows">清理空白行</button>
       <span class="text-xs text-gray-500">工程列固定；从任意格粘贴多行会自动新增项目行</span>
       <button class="ml-auto rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20" @click="store.clearAll()">清空全部内容</button>
     </div>
@@ -20,11 +22,16 @@
       <span>{{ tableHint }}</span>
     </div>
 
-    <div class="flex-1 overflow-auto">
+    <div class="min-h-0 flex-1 overflow-auto overscroll-contain">
       <table class="w-max min-w-full border-collapse">
         <thead>
           <tr>
-            <th class="sticky top-0 z-20 w-12 border border-[#2a2a3a] bg-[#1a1a2e] py-2 text-xs text-gray-500">#</th>
+            <th class="sticky top-0 z-20 w-24 border border-[#2a2a3a] bg-[#1a1a2e] py-2 text-xs text-gray-500">
+              <label class="flex items-center justify-center gap-1">
+                <input type="checkbox" class="accent-blue-500" :checked="allRowsSelected" @change="toggleAllRows" />
+                <span>#</span>
+              </label>
+            </th>
             <th v-for="(col, ci) in store.columns" :key="`th-${ci}`" class="sticky top-0 z-10 border border-[#2a2a3a] bg-[#1a1a2e] p-1" :class="columnClass(col.name)">
               <div class="flex items-center gap-1">
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px]" :class="columnBadgeClass(col.name)">{{ columnIcon(col.name) }}</span>
@@ -38,10 +45,10 @@
           <tr v-for="(row, ri) in store.rows" :key="`tr-${ri}`" class="group hover:bg-[#121222]">
             <td class="border border-[#222235] bg-[#0a0a14] px-1 text-center text-xs text-gray-600">
               <div class="flex items-center justify-center gap-1">
+                <input type="checkbox" class="accent-blue-500" :checked="selectedRows.has(ri)" @change="toggleRow(ri)" />
                 <span class="w-5 text-right">{{ ri + 1 }}</span>
                 <button class="rounded px-1 text-[10px] text-blue-300 opacity-60 hover:bg-blue-500/15 hover:opacity-100" title="在下方新增一行" @click="store.addRow(true, ri)">+</button>
                 <button class="rounded px-1 text-[10px] text-amber-300 opacity-60 hover:bg-amber-500/15 hover:opacity-100" title="清空这一行" @click="clearRow(ri)">清</button>
-
               </div>
             </td>
             <td v-for="(col, ci) in store.columns" :key="`td-${ri}-${ci}`" class="border border-[#222235] p-0" :class="isLongTextColumn(col.name) ? 'h-20' : 'h-10'">
@@ -83,12 +90,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useBulkStore } from '../stores/bulkStore';
 
 const store = useBulkStore();
 const tableHint = ref('');
 const selectedCell = ref({ row: 0, column: 0 });
+const selectedRows = ref(new Set());
+const allRowsSelected = computed(() => store.rows.length > 0 && selectedRows.value.size === store.rows.length);
 const STANDARD_NAMES = ['任务名称', '视频文件名', '音频文件名', '配乐文件名', '配乐音量%', '滚动标题', '滚动正文', '署名'];
 
 const columnClass = (name) => {
@@ -141,6 +150,32 @@ const ensureStandardColumns = () => {
   store.templates.forEach((template) => { template.bindings = store.createAutoBindings(); });
   store.saveDraft();
   tableHint.value = '已恢复标准列：视频、配音、配乐、标题、正文、署名都保留。';
+};
+
+const toggleRow = (rowIndex) => {
+  const next = new Set(selectedRows.value);
+  if (next.has(rowIndex)) next.delete(rowIndex);
+  else next.add(rowIndex);
+  selectedRows.value = next;
+};
+
+const toggleAllRows = () => {
+  selectedRows.value = allRowsSelected.value ? new Set() : new Set(store.rows.map((_, index) => index));
+};
+
+const clearSelectedRows = () => {
+  if (!selectedRows.value.size) return;
+  if (!window.confirm('清空选中的 ' + selectedRows.value.size + ' 行？固定列和行位置会保留。')) return;
+  Array.from(selectedRows.value).forEach((rowIndex) => store.clearRow(rowIndex));
+  tableHint.value = '已清空选中的 ' + selectedRows.value.size + ' 行。';
+  selectedRows.value = new Set();
+};
+
+const trimEmptyRows = () => {
+  const before = store.rows.length;
+  store.trimEmptyRows();
+  selectedRows.value = new Set();
+  tableHint.value = '已清理 ' + (before - store.rows.length) + ' 个空白项目行，至少保留 15 行。';
 };
 
 const clearRow = (rowIndex) => {
