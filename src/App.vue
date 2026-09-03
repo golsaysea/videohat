@@ -2959,7 +2959,7 @@ const uploadCurrentAssets = async () => {
 const deleteSelectedCloudProject = async () => {
   const project = cloudProjects.value.find((item) => item.id === selectedCloudProjectId.value);
   if (!project) return;
-  if (!window.confirm(`确定删除云端工程“${project.title}”？这只删除工程记录，不会删除 R2 里的音频/视频素材。`)) return;
+  if (!window.confirm(`确定删除云端工程“${project.title}”？会同时删除这个工程关联的 R2 音频/视频素材，字体不会删除。`)) return;
   persistCloudOwner();
   cloudBusy.value = true;
   cloudStatus.value = `删除工程：${project.title}`;
@@ -2982,7 +2982,7 @@ const deleteSelectedOfficialTemplate = async () => {
   if (!template) return;
   persistAdminToken();
   persistCloudOwner();
-  if (!window.confirm(`确定删除官方工程“${template.title}”？这只删除模板记录，不会删除 R2 里的音频素材。`)) return;
+  if (!window.confirm(`确定删除官方工程“${template.title}”？会同时删除这个模板关联的 R2 音频素材，字体不会删除。`)) return;
   templateBusy.value = true;
   templateProgress.value = 0.25;
   templateStatus.value = `删除官方工程：${template.title}`;

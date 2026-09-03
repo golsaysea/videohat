@@ -151,6 +151,41 @@ const sanitizeTemplate = (row, includeDraft = false) => ({
   updatedAt: row.updated_at,
 });
 
+const collectAssetKeys = (value, keys = new Set()) => {
+  if (!value || typeof value !== 'object') return keys;
+  if (typeof value.objectKey === 'string' && value.objectKey) keys.add(value.objectKey);
+  if (Array.isArray(value)) value.forEach((item) => collectAssetKeys(item, keys));
+  else Object.values(value).forEach((item) => collectAssetKeys(item, keys));
+  return keys;
+};
+
+const deleteR2ObjectsForKeys = async (env, keys) => {
+  const bucket = mediaBucket(env);
+  if (!bucket || !keys.size) return { deletedAssets: 0 };
+  let deletedAssets = 0;
+  for (const key of keys) {
+    const row = await env.DB.prepare('SELECT kind FROM assets WHERE object_key = ?').bind(key).first();
+    if (row?.kind === 'font') continue;
+    await bucket.delete(key);
+    await env.DB.prepare('DELETE FROM assets WHERE object_key = ? AND kind != ?').bind(key, 'font').run();
+    deletedAssets += 1;
+  }
+  return { deletedAssets };
+};
+
+const deleteR2ObjectsForProject = async (env, ownerId, projectId, payload) => {
+  const keys = collectAssetKeys(payload || {});
+  if (projectId) {
+    const { results } = await env.DB.prepare(`
+      SELECT object_key
+      FROM assets
+      WHERE owner_id = ? AND project_id = ? AND kind != 'font'
+    `).bind(ownerId, projectId).all();
+    results.forEach((row) => keys.add(row.object_key));
+  }
+  return deleteR2ObjectsForKeys(env, keys);
+};
+
 const isAdminRequest = (request, env) => {
   const configured = env.ADMIN_TOKEN;
   if (!configured) return false;
@@ -211,8 +246,11 @@ const deleteTemplate = async (request, env, id) => {
   const denied = requireAdmin(request, env);
   if (denied) return denied;
   return withDatabase(env, async () => {
+    const row = await env.DB.prepare('SELECT payload, created_by FROM templates WHERE id = ?').bind(id).first();
+    let cleanup = { deletedAssets: 0 };
+    if (row?.payload) cleanup = await deleteR2ObjectsForProject(env, row.created_by || '', id, JSON.parse(row.payload));
     await env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id).run();
-    return ok(env, { ok: true });
+    return ok(env, { ok: true, ...cleanup });
   }, 'Template delete');
 };
 
@@ -258,8 +296,11 @@ const saveProject = async (request, env) => withDatabase(env, async () => {
 
 const deleteProject = async (request, env, id) => withDatabase(env, async () => {
   const ownerId = await ownerFromRequest(request, env);
+  const row = await env.DB.prepare('SELECT payload FROM projects WHERE id = ? AND owner_id = ?').bind(id, ownerId).first();
+  let cleanup = { deletedAssets: 0 };
+  if (row?.payload) cleanup = await deleteR2ObjectsForProject(env, ownerId, id, JSON.parse(row.payload));
   await env.DB.prepare('DELETE FROM projects WHERE id = ? AND owner_id = ?').bind(id, ownerId).run();
-  return ok(env, { ok: true });
+  return ok(env, { ok: true, ...cleanup });
 }, 'Project delete');
 
 const listFonts = async (request, env) => withDatabase(env, async () => {
