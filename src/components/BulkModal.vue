@@ -93,7 +93,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, ref } from 'vue';
+import { computed, defineComponent, h, onMounted, ref } from 'vue';
 import BulkTable from './BulkTable.vue';
 import TemplateBindings from './TemplateBindings.vue';
 import { useBulkStore } from '../stores/bulkStore';
@@ -115,6 +115,12 @@ const musicVolume = ref(30);
 const materialApplyMode = ref('fill');
 const bulkHint = ref('提示：可以直接粘贴表格文案，也可以先拖入素材，再用补全/覆盖/追加把文件名写入对应列。');
 
+const formatSize = (size) => {
+  if (!size) return '';
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+};
+
 const FileList = defineComponent({
   props: {
     items: { type: Array, default: () => [] },
@@ -122,7 +128,11 @@ const FileList = defineComponent({
   },
   setup(fileProps) {
     return () => fileProps.items.length
-      ? h('div', { class: 'mt-2 max-h-28 space-y-1 overflow-y-auto' }, fileProps.items.map((item) => h('div', { class: 'truncate rounded bg-black/30 px-2 py-1 text-[11px] text-gray-300', title: item.name }, item.name)))
+      ? h('div', { class: 'mt-2 max-h-32 space-y-1 overflow-y-auto' }, fileProps.items.map((item, index) => h('div', { class: 'flex items-center gap-2 rounded bg-black/30 px-2 py-1 text-[11px] text-gray-300', title: item.name }, [
+        h('span', { class: 'w-5 shrink-0 text-right text-gray-500' }, String(index + 1)),
+        h('span', { class: 'min-w-0 flex-1 truncate' }, item.name),
+        h('span', { class: 'shrink-0 text-gray-500' }, formatSize(item.size)),
+      ])))
       : h('p', { class: 'mt-2 text-[11px] text-gray-500' }, fileProps.empty);
   },
 });
@@ -145,22 +155,30 @@ const poolLabels = {
   music: '配乐',
 };
 
-const registerFiles = (files) => files.map((file) => {
-  const [path] = WebAssetPool.registerFiles([file]);
-  return {
-    file,
+const mergeRecords = (current, records) => {
+  const map = new Map(current.map((item) => [normalizeMatchName(item.name || item.path), item]));
+  records.forEach((item) => map.set(normalizeMatchName(item.name || item.path), item));
+  return Array.from(map.values());
+};
+
+const registerFiles = (files) => {
+  const fileList = Array.from(files || []);
+  const paths = WebAssetPool.registerFiles(fileList);
+  return paths.map((path, index) => WebAssetPool.getRecord(path) || {
+    file: fileList[index],
     url: WebAssetPool.getUrl(path),
-    name: file.name,
+    name: fileList[index]?.name || path,
     path,
-  };
-});
+    size: fileList[index]?.size || 0,
+  });
+};
 
 const applyFiles = (files, kind) => {
   const records = registerFiles(Array.from(files || []));
   if (!records.length) return;
-  if (kind === 'video') batchVideos.value = records;
-  if (kind === 'audio') batchAudios.value = records;
-  if (kind === 'music') batchMusic.value = records;
+  if (kind === 'video') batchVideos.value = mergeRecords(batchVideos.value, records);
+  if (kind === 'audio') batchAudios.value = mergeRecords(batchAudios.value, records);
+  if (kind === 'music') batchMusic.value = mergeRecords(batchMusic.value, records);
   bulkHint.value = `已读取 ${records.length} 个${poolLabels[kind]}素材。可写入表格列，也可直接生成队列。`;
 };
 
@@ -253,6 +271,12 @@ const appendRowsForAllMedia = () => {
 };
 
 const normalizeName = (value) => String(value || '').trim().toLowerCase();
+const normalizeMatchName = (value) => normalizeName(value)
+  .replace(/\\\\/g, '/')
+  .split('/')
+  .pop()
+  .replace(/\.[a-z0-9]{2,5}$/i, '')
+  .replace(/[\s_-]+/g, '');
 
 const bindingIndex = (template, key) => {
   const auto = store.createAutoBindings();
@@ -267,10 +291,15 @@ const pickBatchAsset = (pool, row, template, key, rowIndex) => {
   const boundIndex = bindingIndex(template, key);
   const wanted = boundIndex >= 0 ? normalizeName(row[boundIndex]) : '';
   if (wanted) {
-    const exact = pool.find((item) => normalizeName(item.name) === wanted);
+    const wantedMatch = normalizeMatchName(wanted);
+    const exact = pool.find((item) => normalizeName(item.name) === wanted || normalizeMatchName(item.name) === wantedMatch || normalizeMatchName(item.path) === wantedMatch);
     if (exact) return exact;
-    const partial = pool.find((item) => normalizeName(item.name).includes(wanted) || wanted.includes(normalizeName(item.name)));
+    const partial = pool.find((item) => {
+      const itemMatch = normalizeMatchName(item.name || item.path);
+      return itemMatch && wantedMatch && (itemMatch.includes(wantedMatch) || wantedMatch.includes(itemMatch));
+    });
     if (partial) return partial;
+    return null;
   }
   return pool.length ? pool[rowIndex % pool.length] : null;
 };
@@ -296,6 +325,7 @@ const generate = () => {
   }
 
   const tasks = [];
+  const missing = { video: 0, audio: 0, music: 0 };
   validRows.forEach((row, rowIndex) => {
     store.templates.forEach((template) => {
       const overlay = JSON.parse(JSON.stringify(props.templateOverlay));
@@ -320,6 +350,9 @@ const generate = () => {
       const rowAudioName = cellValue(row, audioIndex);
       const rowMusicName = cellValue(row, musicIndex);
       const rowMusicVolume = volumeIndex >= 0 ? numericPercent(row[volumeIndex], musicVolume.value) : musicVolume.value;
+      if (rowVideoName && !video) missing.video += 1;
+      if (rowAudioName && !audio) missing.audio += 1;
+      if (rowMusicName && !music) missing.music += 1;
 
       tasks.push({
         id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -344,7 +377,17 @@ const generate = () => {
     });
   });
 
-  bulkHint.value = `已按当前批量表格工程生成 ${tasks.length} 条任务；外部任务队列会同步为这张表，不再累加旧任务。`;
+  const missText = [missing.video ? `视频未匹配 ${missing.video}` : '', missing.audio ? `音频未匹配 ${missing.audio}` : '', missing.music ? `配乐未匹配 ${missing.music}` : ''].filter(Boolean).join('，');
+  bulkHint.value = `已按当前批量表格工程生成 ${tasks.length} 条任务；${missText ? missText + '，请检查文件名或重新拖入素材。' : '素材匹配正常。'}外部任务队列会同步为这张表。`;
   emit('generate', tasks);
 };
+
+onMounted(() => {
+  batchVideos.value = WebAssetPool.list('video');
+  batchAudios.value = WebAssetPool.list('audio');
+  batchMusic.value = [];
+  if (batchVideos.value.length || batchAudios.value.length) {
+    bulkHint.value = `已从当前浏览器素材池恢复：视频 ${batchVideos.value.length} 个，音频 ${batchAudios.value.length} 个。表格中同名文件会优先精确匹配。`;
+  }
+});
 </script>

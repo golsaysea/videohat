@@ -49,6 +49,15 @@
                 placeholder="粘贴正文文案..."
                 @input="event => store.updateCell(ri, ci, event.target.value)"
               ></textarea>
+              <div v-else-if="isMediaColumn(col.name)" class="flex h-full items-center gap-2 px-2">
+                <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px]" :class="columnBadgeClass(col.name)">{{ mediaShortLabel(col.name) }}</span>
+                <input
+                  :value="row[ci]"
+                  class="h-full min-w-0 flex-1 border-none bg-transparent text-sm text-gray-200 outline-none focus:bg-purple-900/30 focus:ring-1 focus:ring-purple-500"
+                  :placeholder="placeholderFor(col.name)"
+                  @input="event => store.updateCell(ri, ci, event.target.value)"
+                />
+              </div>
               <input
                 v-else
                 :value="row[ci]"
@@ -97,6 +106,14 @@ const columnBadgeClass = (name) => {
 };
 
 const isLongTextColumn = (name) => /正文|文案|content|body/i.test(name);
+const isMediaColumn = (name) => /视频|实拍|音频|配音|配乐|video|audio|voice|music|bgm/i.test(name) && !/音量|volume/i.test(name);
+
+const mediaShortLabel = (name) => {
+  if (name.includes('视频') || /video/i.test(name)) return 'VID';
+  if (name.includes('配乐') || /music|bgm/i.test(name)) return 'BGM';
+  if (name.includes('音频') || name.includes('配音') || /audio|voice/i.test(name)) return 'AUD';
+  return 'FILE';
+};
 
 const placeholderFor = (name) => {
   if (name.includes('视频')) return '显示文件名，不会自动上传';
