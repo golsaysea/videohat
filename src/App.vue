@@ -1551,25 +1551,31 @@ const applyTaskToEditor = async (task) => {
   media.videoFile = task.videoFile || null;
   media.audioFile = task.audioFile || null;
   media.musicFile = task.musicFile || null;
-  media.videoUrl = task.videoUrl || media.videoUrl;
-  media.audioUrl = task.audioUrl || media.audioUrl;
+  media.videoUrl = task.videoUrl || '';
+  media.audioUrl = task.audioUrl || '';
   media.musicUrl = task.musicUrl || '';
-  media.videoName = task.videoName || media.videoName;
-  media.audioName = task.audioName || media.audioName;
+  media.videoName = task.videoName || '';
+  media.audioName = task.audioName || '';
   media.musicName = task.musicName || '';
-  media.videoDuration = task.videoDuration || media.videoDuration;
-  media.audioDuration = task.audioDuration || media.audioDuration;
+  media.videoDuration = task.videoDuration || 0;
+  media.audioDuration = task.audioDuration || 0;
   media.musicDuration = task.musicDuration || 0;
   media.musicVolume = Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : media.musicVolume;
-  media.videoAsset = task.videoAsset || media.videoAsset;
-  media.audioAsset = task.audioAsset || media.audioAsset;
+  media.videoAsset = task.videoAsset || null;
+  media.audioAsset = task.audioAsset || null;
   media.musicAsset = task.musicAsset || null;
-  media.videoDriveItem = task.videoDriveItem || media.videoDriveItem;
-  media.audioDriveItem = task.audioDriveItem || media.audioDriveItem;
+  media.videoDriveItem = task.videoDriveItem || null;
+  media.audioDriveItem = task.audioDriveItem || null;
   if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(media.videoAsset.ownerId || cloudOwnerId.value, media.videoAsset.objectKey);
   if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(media.audioAsset.ownerId || cloudOwnerId.value, media.audioAsset.objectKey);
   if (!media.musicUrl && media.musicAsset?.objectKey) media.musicUrl = assetUrl(media.musicAsset.ownerId || cloudOwnerId.value, media.musicAsset.objectKey);
   if ((!media.videoUrl && media.videoName) || (!media.audioUrl && media.audioName)) await hydrateTaskMediaFromLocalFolder(task);
+  task.videoUrl = media.videoUrl;
+  task.audioUrl = media.audioUrl;
+  task.musicUrl = media.musicUrl;
+  task.videoFile = media.videoFile;
+  task.audioFile = media.audioFile;
+  task.musicFile = media.musicFile;
   await nextTick();
   if (videoEl.value && media.videoUrl) {
     videoEl.value.preload = 'auto';
@@ -2820,12 +2826,27 @@ const publishCurrentAsTemplate = async () => {
   templateStatus.value = '准备官方工程模板...';
   try {
     const projectId = currentCloudProjectId.value || selectedCloudProjectId.value || 'official-template';
-    if (media.audioFile && !media.audioAsset) {
-      templateProgress.value = 0.35;
-      templateStatus.value = '上传官方音频到 R2...';
-      media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'template-audio', projectId })).asset;
-      syncSelectedTask();
+    const audioUploadTasks = tasks.value.filter((task) => task.audioFile && !task.audioAsset);
+    if (media.audioFile && !media.audioAsset && !audioUploadTasks.includes(tasks.value[selectedTaskIndex.value])) {
+      audioUploadTasks.unshift(tasks.value[selectedTaskIndex.value]);
     }
+    for (let index = 0; index < audioUploadTasks.length; index += 1) {
+      const task = audioUploadTasks[index];
+      templateProgress.value = 0.18 + ((index + 1) / Math.max(1, audioUploadTasks.length)) * 0.45;
+      templateStatus.value = `上传官方音频到 R2：${index + 1}/${audioUploadTasks.length} ${task.audioName || task.audioFile.name}`;
+      task.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, task.audioFile, { kind: 'template-audio', projectId })).asset;
+      task.audioName = task.audioName || task.audioAsset.fileName || task.audioFile.name;
+      if (tasks.value[selectedTaskIndex.value] === task) {
+        media.audioAsset = task.audioAsset;
+        media.audioName = task.audioName;
+      }
+    }
+    if (media.audioFile && !media.audioAsset) {
+      templateProgress.value = 0.65;
+      templateStatus.value = '上传当前官方音频到 R2...';
+      media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'template-audio', projectId })).asset;
+    }
+    syncSelectedTask();
     templateProgress.value = 0.72;
     templateStatus.value = '保存工程参数和表格任务到 D1...';
     const { template } = await saveOfficialTemplate(cloudOwnerId.value, adminToken.value, {
@@ -2987,22 +3008,27 @@ const handleGeneratedTasks = (generatedTasks) => {
     musicDuration: media.musicDuration,
     musicVolume: media.musicVolume,
   };
-  const nextTasks = generatedTasks.map((task) => ({
-    ...inherited,
-    ...task,
-    videoUrl: task.videoUrl || inherited.videoUrl,
-    audioUrl: task.audioUrl || inherited.audioUrl,
-    musicUrl: task.musicUrl || inherited.musicUrl,
-    videoName: task.videoName || inherited.videoName,
-    audioName: task.audioName || inherited.audioName,
-    musicName: task.musicName || inherited.musicName,
-    videoDuration: task.videoDuration || inherited.videoDuration,
-    audioDuration: task.audioDuration || inherited.audioDuration,
-    musicDuration: task.musicDuration || inherited.musicDuration,
-    musicVolume: Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : inherited.musicVolume,
-    exportStatus: '等待导出',
-    exportProgress: 0,
-  }));
+  const nextTasks = generatedTasks.map((task) => {
+    const hasVideoName = Boolean(task.videoName);
+    const hasAudioName = Boolean(task.audioName);
+    const hasMusicName = Boolean(task.musicName);
+    return {
+      ...inherited,
+      ...task,
+      videoUrl: hasVideoName ? (task.videoUrl || '') : (task.videoUrl || inherited.videoUrl),
+      audioUrl: hasAudioName ? (task.audioUrl || '') : (task.audioUrl || inherited.audioUrl),
+      musicUrl: hasMusicName ? (task.musicUrl || '') : (task.musicUrl || inherited.musicUrl),
+      videoName: task.videoName || inherited.videoName,
+      audioName: task.audioName || inherited.audioName,
+      musicName: task.musicName || inherited.musicName,
+      videoDuration: task.videoDuration || inherited.videoDuration,
+      audioDuration: task.audioDuration || inherited.audioDuration,
+      musicDuration: task.musicDuration || inherited.musicDuration,
+      musicVolume: Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : inherited.musicVolume,
+      exportStatus: '等待导出',
+      exportProgress: 0,
+    };
+  });
   tasks.value = nextTasks;
   selectedTaskIndex.value = 0;
   if (tasks.value[0]) applyTaskToEditor(tasks.value[0]);
