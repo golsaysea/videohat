@@ -1545,8 +1545,18 @@ const syncSelectedTask = () => {
   current.audioDriveItem = media.audioDriveItem;
 };
 
+const resetMediaElement = (element) => {
+  if (!element) return;
+  element.pause();
+  element.removeAttribute('src');
+  element.load();
+};
+
 const applyTaskToEditor = async (task) => {
   if (!task) return;
+  resetMediaElement(videoEl.value);
+  resetMediaElement(audioEl.value);
+  resetMediaElement(musicEl.value);
   Object.assign(overlayState, createScrollOverlay(task.overlays?.[0] || {}));
   media.videoFile = task.videoFile || null;
   media.audioFile = task.audioFile || null;
@@ -1630,10 +1640,13 @@ const rehydrateSelectedTaskMediaFromLocalFolder = async () => {
   return restored;
 };
 
-const selectTask = (index) => {
+const selectTask = async (index) => {
+  stopPlayback();
   syncSelectedTask();
   selectedTaskIndex.value = index;
-  applyTaskToEditor(tasks.value[index]);
+  await applyTaskToEditor(tasks.value[index]);
+  drawPreview();
+  scheduleLocalProjectSave();
 };
 
 const addTaskFromCurrent = () => {
@@ -2790,25 +2803,35 @@ const applySelectedTemplate = async () => {
     Object.assign(exportOptions, template.payload.exportOptions || {});
     const templateTasks = template.payload.tasks?.length ? template.payload.tasks : [{ ...tasks.value[0], overlays: [template.payload.overlay || overlayState] }];
     const templateAudio = template.payload.assets?.audio || templateTasks.find((task) => task.audioAsset)?.audioAsset || null;
-    tasks.value = templateTasks.map((task, index) => ({
-      ...task,
-      ...currentVideo,
-      audioAsset: task.audioAsset || templateAudio || null,
-      audioName: task.audioName || templateAudio?.fileName || '',
-      audioDuration: task.audioDuration || 0,
-      audioUrl: '',
-      audioFile: null,
-      audioDriveItem: null,
-      id: `template_${Date.now()}_${index}`,
-      baseName: task.baseName || `${template.title} ${index + 1}`,
-      exportStatus: '等待导出',
-      exportProgress: 0,
-    }));
+    const templateAudioName = normalizeOriginalMediaName(templateAudio?.fileName || templateAudio?.name || '');
+    let missingCloudAudio = 0;
+    tasks.value = templateTasks.map((task, index) => {
+      const taskAudioName = normalizeOriginalMediaName(task.audioName || '');
+      const canUseGlobalAudio = templateAudio && (!taskAudioName || taskAudioName === templateAudioName);
+      const audioAsset = task.audioAsset || (canUseGlobalAudio ? templateAudio : null);
+      if (taskAudioName && !audioAsset) missingCloudAudio += 1;
+      return {
+        ...task,
+        ...currentVideo,
+        audioAsset,
+        audioName: task.audioName || audioAsset?.fileName || '',
+        audioDuration: audioAsset ? (task.audioDuration || 0) : 0,
+        audioUrl: audioAsset?.objectKey ? assetUrl(audioAsset.ownerId || cloudOwnerId.value, audioAsset.objectKey) : '',
+        audioFile: null,
+        audioDriveItem: null,
+        id: `template_${Date.now()}_${index}`,
+        baseName: task.baseName || `${template.title} ${index + 1}`,
+        exportStatus: audioAsset || !taskAudioName ? '等待导出' : '音频未绑定 R2，请重新发布模板',
+        exportProgress: 0,
+      };
+    });
     selectedTaskIndex.value = 0;
     await applyTaskToEditor(tasks.value[0]);
     syncSelectedTask();
     scheduleLocalProjectSave();
-    templateStatus.value = `已套用工程模板：${template.title}。请替换/选择自己的实拍视频后导出。`;
+    templateStatus.value = missingCloudAudio
+      ? `已套用工程模板：${template.title}，但 ${missingCloudAudio} 条音频没有绑定 R2。请管理员用新版重新上传音频并保存工程模板。`
+      : `已套用工程模板：${template.title}。请替换/选择自己的实拍视频后导出。`;
   } catch (error) {
     console.error(error);
     templateStatus.value = `模板套用失败：${error.message}`;
