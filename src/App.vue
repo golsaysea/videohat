@@ -428,7 +428,10 @@
         <section class="min-h-0 overflow-hidden">
           <div class="border-b border-[#303648] p-4">
             <input v-model="fontLibraryModal.query" class="w-full rounded border border-[#33394a] bg-[#070a12] px-3 py-2 text-sm text-white outline-none focus:border-blue-500" placeholder="搜索字体：如 英文、标题、中文、手写..." />
-            <div class="mt-3 text-xs text-gray-500">当前字段：{{ fontLibraryModal.label }}，点击字体卡片即可应用。</div>
+            <div class="mt-3 flex items-center justify-between text-xs text-gray-500">
+              <span>当前字段：{{ fontLibraryModal.label }}，点击字体卡片即可应用。</span>
+              <span>{{ fontBusy ? '读取 R2 字体中...' : '可用字体 ' + fontChoices.length + ' 个' }}</span>
+            </div>
           </div>
           <div class="grid max-h-[72vh] grid-cols-2 gap-3 overflow-y-auto p-4">
             <button v-for="font in filteredFontChoices" :key="font.value" class="rounded border bg-black/20 p-3 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10" :class="fontLibraryModal.value === font.value ? 'border-cyan-400 ring-1 ring-cyan-400/50' : 'border-[#303648]'" @click="applyFontChoice(font)">
@@ -750,6 +753,7 @@ const openFontLibraryPicker = (payload) => {
   fontLibraryModal.value = payload.value || 'Arial';
   fontLibraryModal.apply = payload.apply;
   fontLibraryModal.query = '';
+  if (!cloudFonts.value.length && !fontBusy.value) refreshCloudFonts();
 };
 
 const applyFontChoice = async (font) => {
@@ -3056,6 +3060,7 @@ onMounted(async () => {
   await restoreLocalProjectDraft();
   await rehydrateSelectedTaskMediaFromLocalFolder();
   refreshOfficialTemplates();
+  refreshCloudFonts();
   animationFrameId = requestAnimationFrame(renderLoop);
 });
 
