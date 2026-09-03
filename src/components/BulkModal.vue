@@ -35,7 +35,10 @@
               </div>
               <div class="rounded border border-dashed border-[#45506a] bg-black/20 p-3 text-center text-xs text-gray-400" @dragover.prevent @drop.prevent="event => dropFiles(event, 'video')">拖入多个视频文件</div>
               <FileList :items="batchVideos" empty="还没有视频素材" />
-              <button class="mt-3 w-full rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-100 hover:bg-blue-500/20" :disabled="!batchVideos.length" @click="applyMaterialToTable('video')">按当前策略写入视频列</button>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <button class="rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-100 hover:bg-blue-500/20" :disabled="!batchVideos.length" @click="applyMaterialToTable('video', 'asc')">正序写入视频列</button>
+                <button class="rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-100 hover:bg-blue-500/20" :disabled="!batchVideos.length" @click="applyMaterialToTable('video', 'desc')">倒序写入视频列</button>
+              </div>
             </div>
 
             <div class="rounded border border-[#30364a] bg-[#151a2a] p-3">
@@ -48,7 +51,10 @@
               </div>
               <div class="rounded border border-dashed border-[#45506a] bg-black/20 p-3 text-center text-xs text-gray-400" @dragover.prevent @drop.prevent="event => dropFiles(event, 'audio')">拖入多个配音文件</div>
               <FileList :items="batchAudios" empty="还没有配音素材" />
-              <button class="mt-3 w-full rounded border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs text-green-100 hover:bg-green-500/20" :disabled="!batchAudios.length" @click="applyMaterialToTable('audio')">按当前策略写入音频列</button>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <button class="rounded border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs text-green-100 hover:bg-green-500/20" :disabled="!batchAudios.length" @click="applyMaterialToTable('audio', 'asc')">正序写入音频列</button>
+                <button class="rounded border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs text-green-100 hover:bg-green-500/20" :disabled="!batchAudios.length" @click="applyMaterialToTable('audio', 'desc')">倒序写入音频列</button>
+              </div>
             </div>
 
             <div class="rounded border border-[#30364a] bg-[#151a2a] p-3">
@@ -66,7 +72,10 @@
                 <span class="w-10 text-right text-purple-200">{{ musicVolume }}%</span>
               </div>
               <FileList :items="batchMusic" empty="还没有配乐素材" />
-              <button class="mt-3 w-full rounded border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs text-purple-100 hover:bg-purple-500/20" :disabled="!batchMusic.length" @click="applyMaterialToTable('music')">按当前策略写入配乐列</button>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <button class="rounded border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs text-purple-100 hover:bg-purple-500/20" :disabled="!batchMusic.length" @click="applyMaterialToTable('music', 'asc')">正序写入配乐列</button>
+                <button class="rounded border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs text-purple-100 hover:bg-purple-500/20" :disabled="!batchMusic.length" @click="applyMaterialToTable('music', 'desc')">倒序写入配乐列</button>
+              </div>
             </div>
           </section>
 
@@ -155,10 +164,16 @@ const poolLabels = {
   music: '配乐',
 };
 
+const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const naturalSortRecords = (records, direction = 'asc') => [...records].sort((a, b) => {
+  const result = naturalCollator.compare(a.name || a.path || '', b.name || b.path || '');
+  return direction === 'desc' ? -result : result;
+});
+
 const mergeRecords = (current, records) => {
   const map = new Map(current.map((item) => [normalizeMatchName(item.name || item.path), item]));
   records.forEach((item) => map.set(normalizeMatchName(item.name || item.path), item));
-  return Array.from(map.values());
+  return naturalSortRecords(Array.from(map.values()));
 };
 
 const registerFiles = (files) => {
@@ -219,8 +234,8 @@ const refreshTemplateBindings = () => {
   store.saveDraft();
 };
 
-const applyMaterialToTable = (kind) => {
-  const pool = pools.value[kind] || [];
+const applyMaterialToTable = (kind, direction = 'asc') => {
+  const pool = naturalSortRecords(pools.value[kind] || [], direction);
   if (!pool.length) {
     window.alert(`请先选择${poolLabels[kind]}素材`);
     return;
@@ -260,7 +275,7 @@ const applyMaterialToTable = (kind) => {
   }
 
   refreshTemplateBindings();
-  bulkHint.value = `已按“${materialApplyMode.value === 'fill' ? '补全空位' : materialApplyMode.value === 'overwrite' ? '覆盖' : '添加新行'}”写入 ${written} 个${poolLabels[kind]}素材。`;
+  bulkHint.value = `已按“${materialApplyMode.value === 'fill' ? '补全空位' : materialApplyMode.value === 'overwrite' ? '覆盖' : '添加新行'} / ${direction === 'desc' ? '倒序' : '正序'}”写入 ${written} 个${poolLabels[kind]}素材。`;
 };
 
 const appendRowsForAllMedia = () => {
@@ -383,8 +398,8 @@ const generate = () => {
 };
 
 onMounted(() => {
-  batchVideos.value = WebAssetPool.list('video');
-  batchAudios.value = WebAssetPool.list('audio');
+  batchVideos.value = naturalSortRecords(WebAssetPool.list('video'));
+  batchAudios.value = naturalSortRecords(WebAssetPool.list('audio'));
   batchMusic.value = [];
   if (batchVideos.value.length || batchAudios.value.length) {
     bulkHint.value = `已从当前浏览器素材池恢复：视频 ${batchVideos.value.length} 个，音频 ${batchAudios.value.length} 个。表格中同名文件会优先精确匹配。`;
