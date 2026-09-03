@@ -1,8 +1,7 @@
 <template>
   <div class="flex h-full flex-col bg-[#0a0a14]">
     <div class="flex shrink-0 items-center gap-2 border-b border-[#2a2a3a] bg-[#121222] p-3">
-      <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="store.addRow()">添加行</button>
-      <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="handleAddColumn">添加列</button>
+      <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="store.addRow()">添加项目行</button>
       <button class="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-500/20" @click="pasteSmartCopy">智能粘贴文案</button>
       <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="pasteFromClipboard">粘贴表格</button>
       <label class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10">
@@ -10,8 +9,8 @@
         <input class="hidden" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" @change="importTableFile" />
       </label>
       <button class="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-200 hover:bg-blue-500/20" @click="ensureStandardColumns">恢复标准列</button>
-      <span class="text-xs text-gray-500">纯文案自动进“滚动正文”；Excel/Sheets 会保留视频、音频、配乐列</span>
-      <button class="ml-auto rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20" @click="store.clearAll()">清空数据</button>
+      <span class="text-xs text-gray-500">工程列固定；从任意格粘贴多行会自动新增项目行</span>
+      <button class="ml-auto rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20" @click="store.clearAll()">清空全部内容</button>
     </div>
 
     <div class="border-b border-[#222235] bg-[#0f1320] px-3 py-2 text-xs text-gray-500">
@@ -29,9 +28,8 @@
             <th v-for="(col, ci) in store.columns" :key="`th-${ci}`" class="sticky top-0 z-10 border border-[#2a2a3a] bg-[#1a1a2e] p-1" :class="columnClass(col.name)">
               <div class="flex items-center gap-1">
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px]" :class="columnBadgeClass(col.name)">{{ columnIcon(col.name) }}</span>
-                <input v-model="col.name" class="min-w-0 flex-1 bg-transparent px-2 py-1 text-sm text-white outline-none focus:border-b focus:border-purple-500" placeholder="列名" @blur="store.saveDraft" />
-                <button class="rounded px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/15" title="清空这一列" @click="clearColumn(ci)">清</button>
-                <button class="rounded px-1.5 py-0.5 text-[10px] text-red-400 hover:bg-red-500/15" title="删除这一列" @click="store.removeColumn(ci)">删</button>
+                <span class="min-w-0 flex-1 truncate px-2 py-1 text-sm text-white" :title="col.name">{{ col.name }}</span>
+                <button class="rounded px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/15" title="清空这一列内容，保留固定列" @click="clearColumn(ci)">清</button>
               </div>
             </th>
           </tr>
@@ -43,7 +41,7 @@
                 <span class="w-5 text-right">{{ ri + 1 }}</span>
                 <button class="rounded px-1 text-[10px] text-blue-300 opacity-60 hover:bg-blue-500/15 hover:opacity-100" title="在下方新增一行" @click="store.addRow(true, ri)">+</button>
                 <button class="rounded px-1 text-[10px] text-amber-300 opacity-60 hover:bg-amber-500/15 hover:opacity-100" title="清空这一行" @click="clearRow(ri)">清</button>
-                <button class="rounded px-1 text-[10px] text-red-400 opacity-60 hover:bg-red-500/15 hover:opacity-100" title="删除这一行" @click="store.removeRow(ri)">删</button>
+
               </div>
             </td>
             <td v-for="(col, ci) in store.columns" :key="`td-${ri}-${ci}`" class="border border-[#222235] p-0" :class="isLongTextColumn(col.name) ? 'h-20' : 'h-10'">
@@ -143,11 +141,6 @@ const ensureStandardColumns = () => {
   store.templates.forEach((template) => { template.bindings = store.createAutoBindings(); });
   store.saveDraft();
   tableHint.value = '已恢复标准列：视频、配音、配乐、标题、正文、署名都保留。';
-};
-
-const handleAddColumn = () => {
-  const name = window.prompt('输入新列名', '新列');
-  if (name?.trim()) store.addColumn(name.trim());
 };
 
 const clearRow = (rowIndex) => {

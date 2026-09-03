@@ -84,24 +84,11 @@ export const useBulkStore = defineStore('bulk', {
     },
 
     removeColumn(index) {
-      if (this.columns.length <= 1) {
-        window.alert('至少保留一列');
-        return;
-      }
-      this.columns.splice(index, 1);
-      this.rows.forEach((row) => row.splice(index, 1));
-      this.templates.forEach((template) => {
-        for (const [key, value] of Object.entries(template.bindings)) {
-          if (value === index) delete template.bindings[key];
-          else if (value > index) template.bindings[key] = value - 1;
-        }
-      });
-      this.saveDraft();
+      this.clearColumn(index);
     },
 
     removeRow(index) {
-      this.rows.splice(index, 1);
-      this.saveDraft();
+      this.clearRow(index);
     },
 
     updateCell(rowIndex, columnIndex, value) {
@@ -146,8 +133,8 @@ export const useBulkStore = defineStore('bulk', {
     },
 
     clearAll() {
-      if (window.confirm('清空所有数据？')) {
-        this.columns = createStandardColumns();
+      if (window.confirm('清空所有表格内容？固定列会保留。')) {
+        this.ensureStandardColumns();
         this.rows = [];
         this.templates = [];
         this.initTable();
