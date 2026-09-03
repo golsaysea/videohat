@@ -1120,6 +1120,8 @@ let videoSourceNode = null;
 let audioSourceNode = null;
 let musicSourceNode = null;
 let musicGainNode = null;
+let audioMonitorGainNode = null;
+let musicMonitorGainNode = null;
 let mediaDestination = null;
 let mediaRecorder = null;
 let exportStopTimer = 0;
@@ -2217,6 +2219,7 @@ const seekPreview = () => {
 const startPlayback = async () => {
   if (activeDuration.value <= 0) return;
   isPlaying.value = true;
+  if (audioSourceNode || videoSourceNode || musicSourceNode) await connectPreviewAudioGraph();
   if (videoEl.value && media.videoUrl) {
     videoEl.value.loop = true;
     videoEl.value.muted = true;
@@ -2246,32 +2249,62 @@ const togglePlay = () => {
   else startPlayback();
 };
 
-const ensureAudioGraph = async (useSeparateAudio) => {
-  audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-  if (audioContext.state === 'suspended') await audioContext.resume();
-  mediaDestination ||= audioContext.createMediaStreamDestination();
+const disconnectNode = (node) => {
+  try { node?.disconnect(); } catch (_) {}
+};
 
+const resetAudioGraphConnections = () => {
+  disconnectNode(audioSourceNode);
+  disconnectNode(videoSourceNode);
+  disconnectNode(musicSourceNode);
+  disconnectNode(musicGainNode);
+  disconnectNode(audioMonitorGainNode);
+  disconnectNode(musicMonitorGainNode);
+  musicGainNode = null;
+  audioMonitorGainNode = null;
+  musicMonitorGainNode = null;
+  mediaDestination = null;
+};
+
+const ensureAudioSources = async () => {
+  audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+  if (audioContext.state === "suspended") await audioContext.resume();
   if (audioEl.value && !audioSourceNode) audioSourceNode = audioContext.createMediaElementSource(audioEl.value);
   if (videoEl.value && !videoSourceNode) videoSourceNode = audioContext.createMediaElementSource(videoEl.value);
   if (musicEl.value && !musicSourceNode) musicSourceNode = audioContext.createMediaElementSource(musicEl.value);
-  if (!musicGainNode) musicGainNode = audioContext.createGain();
+};
 
-  try { audioSourceNode?.disconnect(); } catch (_) {}
-  try { videoSourceNode?.disconnect(); } catch (_) {}
-  try { musicSourceNode?.disconnect(); } catch (_) {}
-  try { musicGainNode?.disconnect(); } catch (_) {}
+const connectPreviewAudioGraph = async () => {
+  await ensureAudioSources();
+  resetAudioGraphConnections();
+  if (media.audioUrl && audioSourceNode) {
+    audioMonitorGainNode = audioContext.createGain();
+    audioMonitorGainNode.gain.value = 1;
+    audioSourceNode.connect(audioMonitorGainNode);
+    audioMonitorGainNode.connect(audioContext.destination);
+  }
+  if (media.musicUrl && musicSourceNode) {
+    musicMonitorGainNode = audioContext.createGain();
+    musicMonitorGainNode.gain.value = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
+    musicSourceNode.connect(musicMonitorGainNode);
+    musicMonitorGainNode.connect(audioContext.destination);
+  }
+};
+
+const ensureAudioGraph = async (useSeparateAudio) => {
+  await ensureAudioSources();
+  resetAudioGraphConnections();
+  mediaDestination = audioContext.createMediaStreamDestination();
 
   const activeSource = useSeparateAudio ? audioSourceNode : videoSourceNode;
-  if (activeSource) {
-    activeSource.connect(mediaDestination);
-    activeSource.connect(audioContext.destination);
-  }
-  if (media.musicUrl && musicSourceNode && musicGainNode) {
+  if (activeSource) activeSource.connect(mediaDestination);
+  if (media.musicUrl && musicSourceNode) {
+    musicGainNode = audioContext.createGain();
     musicGainNode.gain.value = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
     musicSourceNode.connect(musicGainNode);
     musicGainNode.connect(mediaDestination);
-    musicGainNode.connect(audioContext.destination);
   }
+  return mediaDestination.stream.getAudioTracks();
 };
 
 const syncVideoForExport = (elapsed) => {
@@ -2377,7 +2410,9 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   const duration = activeDuration.value;
   const useSeparateAudio = Boolean(media.audioUrl);
   const useVideoAudio = !useSeparateAudio && Boolean(media.videoUrl);
-  if (useSeparateAudio || useVideoAudio || media.musicUrl) await ensureAudioGraph(useSeparateAudio);
+  const recordingAudioTracks = (useSeparateAudio || useVideoAudio || media.musicUrl)
+    ? await ensureAudioGraph(useSeparateAudio)
+    : [];
 
   previewTime.value = 0;
   if (videoEl.value && media.videoUrl) {
@@ -2415,8 +2450,8 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   drawPreview({ fullResolution: true });
   await waitForNextPaint();
   const stream = canvas.captureStream(exportOptions.fps || 30);
-  if (mediaDestination?.stream.getAudioTracks().length) {
-    stream.addTrack(mediaDestination.stream.getAudioTracks()[0]);
+  if (recordingAudioTracks.length) {
+    stream.addTrack(recordingAudioTracks[0]);
   }
   const mimeType = supportedMime();
   if (!mimeType) {
