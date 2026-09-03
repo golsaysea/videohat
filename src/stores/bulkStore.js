@@ -10,6 +10,8 @@ export const useBulkStore = defineStore('bulk', {
       { name: '任务名称', type: 'text' },
       { name: '视频文件名', type: 'text' },
       { name: '音频文件名', type: 'text' },
+      { name: '配乐文件名', type: 'text' },
+      { name: '配乐音量%', type: 'text' },
       { name: '滚动标题', type: 'text' },
       { name: '滚动正文', type: 'text' },
       { name: '署名', type: 'text' },
@@ -93,6 +95,8 @@ export const useBulkStore = defineStore('bulk', {
         if (name.includes('任务') || name.includes('名称') || name.includes('name')) bindings.baseName = index;
         if (name.includes('视频') || name.includes('实拍') || name.includes('video')) bindings.video = index;
         if (name.includes('音频') || name.includes('配音') || name.includes('audio') || name.includes('voice')) bindings.audio = index;
+        if ((name.includes('配乐') || name.includes('bgm') || name.includes('music')) && (name.includes('音量') || name.includes('volume'))) bindings.musicVolume = index;
+        else if (name.includes('配乐') || name.includes('bgm') || name.includes('music')) bindings.music = index;
         if (name.includes('标题') || name.includes('title')) bindings.scroll_title = index;
         if (name.includes('正文') || name.includes('内容') || name.includes('content') || name.includes('body') || name.includes('文案')) bindings.content = index;
         if (name.includes('署名') || name.includes('落款') || name.includes('signature')) bindings.signature_text = index;

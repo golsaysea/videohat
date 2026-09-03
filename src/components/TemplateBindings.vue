@@ -41,6 +41,8 @@ const fields = [
   { key: 'baseName', label: '任务名称' },
   { key: 'video', label: '视频文件名' },
   { key: 'audio', label: '音频文件名' },
+  { key: 'music', label: '配乐文件名' },
+  { key: 'musicVolume', label: '配乐音量%' },
   { key: 'scroll_title', label: '滚动标题' },
   { key: 'content', label: '滚动正文' },
   { key: 'signature_text', label: '署名文字' },

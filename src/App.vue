@@ -15,7 +15,7 @@
             <div class="h-full rounded-full bg-blue-500 transition-all" :style="{ width: `${Math.round(exportProgress * 100)}%` }"></div>
           </div>
         </div>
-        <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showSettingsPanel = !showSettingsPanel">{{ showSettingsPanel ? '收起设置' : '设置' }}</button>
+        <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showSettingsModal = true">设置</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showTemplateLibrary = true">工程模板库</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="showBulkModal = true">批量表格</button>
         <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-1.5 text-sm transition hover:bg-[#2b3146]" @click="downloadProject">保存工程 JSON</button>
@@ -78,110 +78,6 @@
             </div>
           </div>
         </div>
-        <div v-if="showSettingsPanel" class="min-h-0 overflow-y-auto border-b border-[#2a2f3a]">
-        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">Google Drive 媒体池</h3>
-            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="driveBusy" @click="connectGoogleDrive">连接</button>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('video')">选云盘视频</button>
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('audio')">选云盘音频</button>
-          </div>
-          <p class="text-xs leading-relaxed text-gray-500">{{ driveStatus }}</p>
-          <div v-if="mediaPool.length" class="max-h-36 space-y-2 overflow-y-auto">
-            <div v-for="item in mediaPool" :key="item.provider + '-' + item.id" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
-              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
-              <div class="mt-2 flex gap-2">
-                <button class="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[11px] text-blue-200 hover:bg-blue-500/20" :disabled="driveBusy" @click="useDriveMediaForCurrent(item)">用于当前任务</button>
-                <button class="rounded border border-[#3a4152] px-2 py-1 text-[11px] text-gray-400 hover:bg-white/5" @click="removeMediaPoolItem(item)">移除</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">云端工程</h3>
-            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="cloudBusy" @click="refreshCloudProjects">刷新</button>
-          </div>
-          <label class="space-y-1">
-            <span class="block text-xs text-gray-500">用户标识</span>
-            <input v-model="cloudOwnerId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500" placeholder="例如 your@email.com" @change="persistCloudOwner" />
-          </label>
-          <div class="grid grid-cols-2 gap-2">
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="saveProjectOnline">保存云端</button>
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="uploadCurrentAssets">手动上传素材到 R2</button>
-          </div>
-          <p class="min-h-5 text-xs text-gray-500">{{ cloudStatus }}</p>
-          <select v-if="cloudProjects.length" v-model="selectedCloudProjectId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
-            <option value="">选择云端工程</option>
-            <option v-for="project in cloudProjects" :key="project.id" :value="project.id">{{ project.title }} · {{ formatCloudTime(project.updatedAt) }}</option>
-          </select>
-          <div v-if="selectedCloudProjectId" class="grid grid-cols-2 gap-2">
-            <button class="rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
-            <button class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="cloudBusy" @click="deleteSelectedCloudProject">删除工程</button>
-          </div>
-        </div>
-
-        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">官方工程模板</h3>
-            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="templateBusy" @click="refreshOfficialTemplates">刷新</button>
-          </div>
-          <select v-model="selectedTemplateId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
-            <option value="">选择工程模板</option>
-            <option v-for="template in officialTemplates" :key="template.id" :value="template.id">{{ template.title }}</option>
-          </select>
-          <p class="min-h-5 text-xs text-gray-500">{{ templateStatus }}</p>
-          <div v-if="templateProgress > 0 || templateBusy" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
-            <div class="flex items-center justify-between text-[11px] text-blue-100">
-              <span>模板处理</span>
-              <span>{{ Math.round(templateProgress * 100) }}%</span>
-            </div>
-            <div class="h-1.5 overflow-hidden rounded bg-black/40">
-              <div class="h-full rounded bg-blue-400 transition-all" :style="{ width: `${Math.round(templateProgress * 100)}%` }"></div>
-            </div>
-          </div>
-          <div v-if="selectedTemplateId" class="grid grid-cols-2 gap-2">
-            <button class="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用模板</button>
-            <button v-if="isAdminMode" class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="templateBusy || !adminToken" @click="deleteSelectedOfficialTemplate">删除模板</button>
-          </div>
-          <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
-            <label class="space-y-1">
-              <span class="block text-xs text-amber-200">管理员 Token</span>
-              <input v-model="adminToken" type="password" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="Cloudflare ADMIN_TOKEN" @change="persistAdminToken" />
-            </label>
-            <input v-model="templateTitle" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="模板名称，例如：祷告主题-中文文案-001" />
-            <button class="w-full rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-400/20" :disabled="templateBusy || !adminToken" @click="publishCurrentAsTemplate">上传音频并保存工程模板</button>
-          </div>
-        </div>
-
-        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="m-0 text-sm font-bold text-cyan-300">官方字体库</h3>
-            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="fontBusy" @click="refreshCloudFonts">刷新</button>
-          </div>
-          <p class="min-h-5 text-xs leading-relaxed text-gray-500">{{ fontLibraryStatus }}</p>
-          <div v-if="fontUploadProgress > 0 || fontBusy" class="space-y-1 rounded border border-cyan-500/30 bg-cyan-500/10 p-2">
-            <div class="flex items-center justify-between text-[11px] text-cyan-100">
-              <span>字体处理</span>
-              <span>{{ Math.round(fontUploadProgress * 100) }}%</span>
-            </div>
-            <div class="h-1.5 overflow-hidden rounded bg-black/40">
-              <div class="h-full rounded bg-cyan-400 transition-all" :style="{ width: `${Math.round(fontUploadProgress * 100)}%` }"></div>
-            </div>
-          </div>
-          <label v-if="isAdminMode" class="block cursor-pointer rounded border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-center text-xs text-amber-100 hover:bg-amber-400/20">
-            批量上传字体到 R2
-            <input class="hidden" type="file" multiple accept=".woff2,.woff,.ttf,.otf,.ttc,font/*" @change="uploadOfficialFonts" />
-          </label>
-          <div v-if="cloudFonts.length" class="max-h-32 space-y-1 overflow-y-auto rounded border border-[#2a2f3a] bg-black/20 p-2">
-            <button v-for="font in cloudFonts" :key="font.id" class="w-full truncate rounded px-2 py-1 text-left text-xs text-gray-300 hover:bg-white/10" :style="{ fontFamily: `'${font.family}', Arial, sans-serif` }" @click="ensureCloudFontLoaded(font)">
-              {{ font.family }}
-            </button>
-          </div>
-        </div>
-        </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center justify-between">
             <span class="text-xs font-bold text-gray-500">任务队列</span>
@@ -196,7 +92,7 @@
               @click="selectTask(index)"
             >
               <span class="block truncate text-sm font-semibold text-white">{{ task.baseName }}</span>
-              <span class="mt-1 block truncate text-xs text-gray-500">{{ task.videoName || '无视频' }} / {{ task.audioName || '无音频' }}</span>
+              <span class="mt-1 block truncate text-xs text-gray-500">{{ task.videoName || '无视频' }} / {{ task.audioName || '无配音' }} / {{ task.musicName || '无配乐' }}</span>
               <div v-if="task.exportStatus" class="mt-2 space-y-1">
                 <div class="flex items-center justify-between text-[11px] text-gray-500">
                   <span>{{ task.exportStatus }}</span>
@@ -232,7 +128,8 @@
 
         <video ref="videoEl" class="hidden" crossorigin="anonymous" playsinline muted></video>
         <audio ref="audioEl" class="hidden" crossorigin="anonymous"></audio>
-        <video v-if="exportedUrl" class="absolute bottom-24 right-5 h-56 rounded border-2 border-blue-500 bg-black shadow-xl" :src="exportedUrl" controls autoplay playsinline></video>
+        <audio ref="musicEl" class="hidden" crossorigin="anonymous" loop></audio>
+<video v-if="exportedUrl" class="absolute bottom-24 right-5 h-56 rounded border-2 border-blue-500 bg-black shadow-xl" :src="exportedUrl" controls autoplay playsinline></video>
       </section>
 
       <aside class="flex min-h-0 flex-col overflow-y-auto border-l border-[#2a2f3a] bg-[#121625]">
@@ -511,6 +408,123 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showSettingsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-[#05070d]/90 p-6 backdrop-blur">
+      <div class="flex max-h-[90vh] w-[min(980px,94vw)] flex-col overflow-hidden rounded-lg border border-[#343b4f] bg-[#111522] shadow-2xl">
+        <div class="flex shrink-0 items-center justify-between border-b border-[#2a2f3a] px-5 py-4">
+          <div>
+            <h2 class="m-0 text-base font-bold text-cyan-300">设置</h2>
+            <p class="m-0 mt-1 text-xs text-gray-500">云端工程、官方模板、字体库和媒体池都收在这里。</p>
+          </div>
+          <button class="rounded border border-[#3a4152] bg-[#202538] px-4 py-2 text-xs text-gray-200 hover:bg-[#2b3146]" @click="showSettingsModal = false">关闭</button>
+        </div>
+        <div class="grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-y-auto p-5">
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">Google Drive 媒体池</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="driveBusy" @click="connectGoogleDrive">连接</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('video')">选云盘视频</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('audio')">选云盘音频</button>
+          </div>
+          <p class="text-xs leading-relaxed text-gray-500">{{ driveStatus }}</p>
+          <div v-if="mediaPool.length" class="max-h-36 space-y-2 overflow-y-auto">
+            <div v-for="item in mediaPool" :key="item.provider + '-' + item.id" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
+              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
+              <div class="mt-2 flex gap-2">
+                <button class="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[11px] text-blue-200 hover:bg-blue-500/20" :disabled="driveBusy" @click="useDriveMediaForCurrent(item)">用于当前任务</button>
+                <button class="rounded border border-[#3a4152] px-2 py-1 text-[11px] text-gray-400 hover:bg-white/5" @click="removeMediaPoolItem(item)">移除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">云端工程</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="cloudBusy" @click="refreshCloudProjects">刷新</button>
+          </div>
+          <label class="space-y-1">
+            <span class="block text-xs text-gray-500">用户标识</span>
+            <input v-model="cloudOwnerId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500" placeholder="例如 your@email.com" @change="persistCloudOwner" />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="saveProjectOnline">保存云端</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="cloudBusy" @click="uploadCurrentAssets">手动上传素材到 R2</button>
+          </div>
+          <p class="min-h-5 text-xs text-gray-500">{{ cloudStatus }}</p>
+          <select v-if="cloudProjects.length" v-model="selectedCloudProjectId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
+            <option value="">选择云端工程</option>
+            <option v-for="project in cloudProjects" :key="project.id" :value="project.id">{{ project.title }} · {{ formatCloudTime(project.updatedAt) }}</option>
+          </select>
+          <div v-if="selectedCloudProjectId" class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20" :disabled="cloudBusy" @click="loadSelectedCloudProject">加载选中工程</button>
+            <button class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="cloudBusy" @click="deleteSelectedCloudProject">删除工程</button>
+          </div>
+        </div>
+
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">官方工程模板</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="templateBusy" @click="refreshOfficialTemplates">刷新</button>
+          </div>
+          <select v-model="selectedTemplateId" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500">
+            <option value="">选择工程模板</option>
+            <option v-for="template in officialTemplates" :key="template.id" :value="template.id">{{ template.title }}</option>
+          </select>
+          <p class="min-h-5 text-xs text-gray-500">{{ templateStatus }}</p>
+          <div v-if="templateProgress > 0 || templateBusy" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
+            <div class="flex items-center justify-between text-[11px] text-blue-100">
+              <span>模板处理</span>
+              <span>{{ Math.round(templateProgress * 100) }}%</span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded bg-black/40">
+              <div class="h-full rounded bg-blue-400 transition-all" :style="{ width: `${Math.round(templateProgress * 100)}%` }"></div>
+            </div>
+          </div>
+          <div v-if="selectedTemplateId" class="grid grid-cols-2 gap-2">
+            <button class="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" :disabled="templateBusy" @click="applySelectedTemplate">套用模板</button>
+            <button v-if="isAdminMode" class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="templateBusy || !adminToken" @click="deleteSelectedOfficialTemplate">删除模板</button>
+          </div>
+          <div v-if="isAdminMode" class="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3">
+            <label class="space-y-1">
+              <span class="block text-xs text-amber-200">管理员 Token</span>
+              <input v-model="adminToken" type="password" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="Cloudflare ADMIN_TOKEN" @change="persistAdminToken" />
+            </label>
+            <input v-model="templateTitle" class="w-full rounded border border-[#33394a] bg-[#070a12] px-2 py-1.5 text-xs text-white outline-none focus:border-amber-400" placeholder="模板名称，例如：祷告主题-中文文案-001" />
+            <button class="w-full rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 hover:bg-amber-400/20" :disabled="templateBusy || !adminToken" @click="publishCurrentAsTemplate">上传音频并保存工程模板</button>
+          </div>
+        </div>
+
+        <div class="space-y-3 border-b border-[#2a2f3a] p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">官方字体库</h3>
+            <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="fontBusy" @click="refreshCloudFonts">刷新</button>
+          </div>
+          <p class="min-h-5 text-xs leading-relaxed text-gray-500">{{ fontLibraryStatus }}</p>
+          <div v-if="fontUploadProgress > 0 || fontBusy" class="space-y-1 rounded border border-cyan-500/30 bg-cyan-500/10 p-2">
+            <div class="flex items-center justify-between text-[11px] text-cyan-100">
+              <span>字体处理</span>
+              <span>{{ Math.round(fontUploadProgress * 100) }}%</span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded bg-black/40">
+              <div class="h-full rounded bg-cyan-400 transition-all" :style="{ width: `${Math.round(fontUploadProgress * 100)}%` }"></div>
+            </div>
+          </div>
+          <label v-if="isAdminMode" class="block cursor-pointer rounded border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-center text-xs text-amber-100 hover:bg-amber-400/20">
+            批量上传字体到 R2
+            <input class="hidden" type="file" multiple accept=".woff2,.woff,.ttf,.otf,.ttc,font/*" @change="uploadOfficialFonts" />
+          </label>
+          <div v-if="cloudFonts.length" class="max-h-32 space-y-1 overflow-y-auto rounded border border-[#2a2f3a] bg-black/20 p-2">
+            <button v-for="font in cloudFonts" :key="font.id" class="w-full truncate rounded px-2 py-1 text-left text-xs text-gray-300 hover:bg-white/10" :style="{ fontFamily: `'${font.family}', Arial, sans-serif` }" @click="ensureCloudFontLoaded(font)">
+              {{ font.family }}
+            </button>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+
     <BulkModal v-if="showBulkModal" :template-overlay="overlayState" @close="showBulkModal = false" @generate="handleGeneratedTasks" />
   </div>
 </template>
@@ -688,10 +702,11 @@ const store = useBulkStore();
 const previewCanvas = ref(null);
 const videoEl = ref(null);
 const audioEl = ref(null);
+const musicEl = ref(null);
 const videoFileInput = ref(null);
 const audioFileInput = ref(null);
 const showBulkModal = ref(false);
-const showSettingsPanel = ref(false);
+const showSettingsModal = ref(false);
 const showTemplateLibrary = ref(false);
 const showExportModal = ref(false);
 const exportDialogMode = ref('current');
@@ -814,14 +829,20 @@ const overlayState = reactive(createScrollOverlay({
 const media = reactive({
   videoFile: null,
   audioFile: null,
+  musicFile: null,
   videoUrl: '',
   audioUrl: '',
+  musicUrl: '',
   videoName: '',
   audioName: '',
+  musicName: '',
   videoDuration: 0,
   audioDuration: 0,
+  musicDuration: 0,
+  musicVolume: 30,
   videoAsset: null,
   audioAsset: null,
+  musicAsset: null,
   videoDriveItem: null,
   audioDriveItem: null,
 });
@@ -848,7 +869,7 @@ const exportOptions = reactive({
   previewScale: '0.5',
 });
 
-const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '', exportStatus: '等待导出', exportProgress: 0 }]);
+const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '', musicName: '', musicVolume: 30, exportStatus: '等待导出', exportProgress: 0 }]);
 const cloudOwnerId = ref(localStorage.getItem('videohat_owner_id') || 'local-user');
 const cloudStatus = ref('云端未同步');
 const cloudBusy = ref(false);
@@ -966,6 +987,8 @@ let animationFrameId = 0;
 let audioContext = null;
 let videoSourceNode = null;
 let audioSourceNode = null;
+let musicSourceNode = null;
+let musicGainNode = null;
 let mediaDestination = null;
 let mediaRecorder = null;
 let exportStopTimer = 0;
@@ -1373,14 +1396,20 @@ const syncSelectedTask = () => {
   current.overlays = [JSON.parse(JSON.stringify(overlayState))];
   current.videoName = media.videoName;
   current.audioName = media.audioName;
+  current.musicName = media.musicName;
   current.videoUrl = media.videoUrl;
   current.audioUrl = media.audioUrl;
+  current.musicUrl = media.musicUrl;
   current.videoDuration = media.videoDuration;
   current.audioDuration = media.audioDuration;
+  current.musicDuration = media.musicDuration;
+  current.musicVolume = media.musicVolume;
   current.videoFile = media.videoFile;
   current.audioFile = media.audioFile;
+  current.musicFile = media.musicFile;
   current.videoAsset = media.videoAsset;
   current.audioAsset = media.audioAsset;
+  current.musicAsset = media.musicAsset;
   current.videoDriveItem = media.videoDriveItem;
   current.audioDriveItem = media.audioDriveItem;
 };
@@ -1390,18 +1419,25 @@ const applyTaskToEditor = async (task) => {
   Object.assign(overlayState, createScrollOverlay(task.overlays?.[0] || {}));
   media.videoFile = task.videoFile || null;
   media.audioFile = task.audioFile || null;
+  media.musicFile = task.musicFile || null;
   media.videoUrl = task.videoUrl || media.videoUrl;
   media.audioUrl = task.audioUrl || media.audioUrl;
+  media.musicUrl = task.musicUrl || '';
   media.videoName = task.videoName || media.videoName;
   media.audioName = task.audioName || media.audioName;
+  media.musicName = task.musicName || '';
   media.videoDuration = task.videoDuration || media.videoDuration;
   media.audioDuration = task.audioDuration || media.audioDuration;
+  media.musicDuration = task.musicDuration || 0;
+  media.musicVolume = Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : media.musicVolume;
   media.videoAsset = task.videoAsset || media.videoAsset;
   media.audioAsset = task.audioAsset || media.audioAsset;
+  media.musicAsset = task.musicAsset || null;
   media.videoDriveItem = task.videoDriveItem || media.videoDriveItem;
   media.audioDriveItem = task.audioDriveItem || media.audioDriveItem;
   if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(media.videoAsset.ownerId || cloudOwnerId.value, media.videoAsset.objectKey);
   if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(media.audioAsset.ownerId || cloudOwnerId.value, media.audioAsset.objectKey);
+  if (!media.musicUrl && media.musicAsset?.objectKey) media.musicUrl = assetUrl(media.musicAsset.ownerId || cloudOwnerId.value, media.musicAsset.objectKey);
   if ((!media.videoUrl && media.videoName) || (!media.audioUrl && media.audioName)) await hydrateTaskMediaFromLocalFolder(task);
   await nextTick();
   if (videoEl.value && media.videoUrl) {
@@ -1422,6 +1458,19 @@ const applyTaskToEditor = async (task) => {
     await waitForMetadata(audioEl.value);
     media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : media.audioDuration;
     task.audioDuration = media.audioDuration;
+  }
+  if (musicEl.value && media.musicUrl) {
+    musicEl.value.preload = 'metadata';
+    musicEl.value.loop = true;
+    musicEl.value.src = media.musicUrl;
+    musicEl.value.load();
+    await waitForMetadata(musicEl.value, 12000);
+    media.musicDuration = Number.isFinite(musicEl.value.duration) ? musicEl.value.duration : 0;
+    task.musicDuration = media.musicDuration;
+  } else if (musicEl.value) {
+    musicEl.value.pause();
+    musicEl.value.removeAttribute('src');
+    musicEl.value.load();
   }
   previewTime.value = 0;
   drawPreview();
@@ -1460,10 +1509,14 @@ const addTaskFromCurrent = () => {
     audioUrl: media.audioUrl,
     videoName: media.videoName,
     audioName: media.audioName,
+    musicName: media.musicName,
     videoDuration: media.videoDuration,
     audioDuration: media.audioDuration,
+    musicDuration: media.musicDuration,
+    musicVolume: media.musicVolume,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    musicAsset: media.musicAsset,
     videoDriveItem: media.videoDriveItem,
     audioDriveItem: media.audioDriveItem,
     exportStatus: '等待导出',
@@ -1970,6 +2023,7 @@ const seekPreview = () => {
   const t = Math.min(previewTime.value, activeDuration.value);
   if (videoEl.value && media.videoUrl && media.videoDuration) videoEl.value.currentTime = t % media.videoDuration;
   if (audioEl.value && media.audioUrl && t <= media.audioDuration) audioEl.value.currentTime = t;
+  if (musicEl.value && media.musicUrl && media.musicDuration) musicEl.value.currentTime = t % media.musicDuration;
   drawPreview();
 };
 
@@ -1986,12 +2040,18 @@ const startPlayback = async () => {
     audioEl.value.currentTime = Math.min(previewTime.value, media.audioDuration || previewTime.value);
     await audioEl.value.play().catch(() => {});
   }
+  if (musicEl.value && media.musicUrl) {
+    musicEl.value.volume = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
+    musicEl.value.currentTime = media.musicDuration ? previewTime.value % media.musicDuration : 0;
+    await musicEl.value.play().catch(() => {});
+  }
 };
 
 const stopPlayback = () => {
   isPlaying.value = false;
   videoEl.value?.pause();
   audioEl.value?.pause();
+  musicEl.value?.pause();
 };
 
 const togglePlay = () => {
@@ -2006,14 +2066,24 @@ const ensureAudioGraph = async (useSeparateAudio) => {
 
   if (audioEl.value && !audioSourceNode) audioSourceNode = audioContext.createMediaElementSource(audioEl.value);
   if (videoEl.value && !videoSourceNode) videoSourceNode = audioContext.createMediaElementSource(videoEl.value);
+  if (musicEl.value && !musicSourceNode) musicSourceNode = audioContext.createMediaElementSource(musicEl.value);
+  if (!musicGainNode) musicGainNode = audioContext.createGain();
 
   try { audioSourceNode?.disconnect(); } catch (_) {}
   try { videoSourceNode?.disconnect(); } catch (_) {}
+  try { musicSourceNode?.disconnect(); } catch (_) {}
+  try { musicGainNode?.disconnect(); } catch (_) {}
 
   const activeSource = useSeparateAudio ? audioSourceNode : videoSourceNode;
   if (activeSource) {
     activeSource.connect(mediaDestination);
     activeSource.connect(audioContext.destination);
+  }
+  if (media.musicUrl && musicSourceNode && musicGainNode) {
+    musicGainNode.gain.value = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
+    musicSourceNode.connect(musicGainNode);
+    musicGainNode.connect(mediaDestination);
+    musicGainNode.connect(audioContext.destination);
   }
 };
 
@@ -2120,7 +2190,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   const duration = activeDuration.value;
   const useSeparateAudio = Boolean(media.audioUrl);
   const useVideoAudio = !useSeparateAudio && Boolean(media.videoUrl);
-  if (useSeparateAudio || useVideoAudio) await ensureAudioGraph(useSeparateAudio);
+  if (useSeparateAudio || useVideoAudio || media.musicUrl) await ensureAudioGraph(useSeparateAudio);
 
   previewTime.value = 0;
   if (videoEl.value && media.videoUrl) {
@@ -2132,6 +2202,12 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   if (audioEl.value && useSeparateAudio) {
     audioEl.value.currentTime = 0;
     await audioEl.value.play().catch(() => {});
+  }
+  if (musicEl.value && media.musicUrl) {
+    musicEl.value.loop = true;
+    musicEl.value.volume = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
+    musicEl.value.currentTime = 0;
+    await musicEl.value.play().catch(() => {});
   }
   if (videoEl.value && media.videoUrl) {
     exportStatus.value = '等待视频帧';
@@ -2270,7 +2346,7 @@ const triggerDownload = (url, name) => {
 };
 
 const makeStorageSafe = (value) => JSON.parse(JSON.stringify(value, (key, item) => {
-  if (key === 'videoUrl' || key === 'audioUrl' || key === 'videoFile' || key === 'audioFile') return undefined;
+  if (key === 'videoUrl' || key === 'audioUrl' || key === 'musicUrl' || key === 'videoFile' || key === 'audioFile' || key === 'musicFile') return undefined;
   if (typeof File !== 'undefined' && item instanceof File) return undefined;
   if (typeof Blob !== 'undefined' && item instanceof Blob) return undefined;
   if (item && typeof item === 'object' && typeof item.queryPermission === 'function') return undefined;
@@ -2285,13 +2361,16 @@ const createProjectPayload = () => ({
   assets: {
     video: media.videoAsset,
     audio: media.audioAsset,
+    music: media.musicAsset,
   },
   tasks: tasks.value.map((task) => ({
     ...task,
     videoUrl: undefined,
     audioUrl: undefined,
+    musicUrl: undefined,
     videoFile: undefined,
     audioFile: undefined,
+    musicFile: undefined,
   })),
 });
 
@@ -2301,10 +2380,14 @@ const createLocalDraftPayload = () => ({
   media: {
     videoName: media.videoName,
     audioName: media.audioName,
+    musicName: media.musicName,
     videoDuration: media.videoDuration,
     audioDuration: media.audioDuration,
+    musicDuration: media.musicDuration,
+    musicVolume: media.musicVolume,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
+    musicAsset: media.musicAsset,
     videoDriveItem: media.videoDriveItem,
     audioDriveItem: media.audioDriveItem,
     exportStatus: '等待导出',
@@ -2358,14 +2441,20 @@ const restoreLocalProjectDraft = async () => {
     selectedTaskIndex.value = Math.min(Number(draft.selectedTaskIndex) || 0, tasks.value.length - 1);
     media.videoFile = null;
     media.audioFile = null;
+    media.musicFile = null;
     media.videoUrl = '';
     media.audioUrl = '';
+    media.musicUrl = '';
     media.videoName = draft.media?.videoName || '';
     media.audioName = draft.media?.audioName || '';
+    media.musicName = draft.media?.musicName || '';
     media.videoDuration = Number(draft.media?.videoDuration) || 0;
     media.audioDuration = Number(draft.media?.audioDuration) || 0;
+    media.musicDuration = Number(draft.media?.musicDuration) || 0;
+    media.musicVolume = Number.isFinite(Number(draft.media?.musicVolume)) ? Number(draft.media.musicVolume) : 30;
     media.videoAsset = draft.media?.videoAsset || null;
     media.audioAsset = draft.media?.audioAsset || null;
+    media.musicAsset = draft.media?.musicAsset || null;
     media.videoDriveItem = draft.media?.videoDriveItem || null;
     media.audioDriveItem = draft.media?.audioDriveItem || null;
     mediaPool.value = Array.isArray(draft.mediaPool) ? draft.mediaPool : [];
@@ -2719,22 +2808,31 @@ const handleGeneratedTasks = (generatedTasks) => {
   const inherited = {
     videoFile: media.videoFile,
     audioFile: media.audioFile,
+    musicFile: media.musicFile,
     videoUrl: media.videoUrl,
     audioUrl: media.audioUrl,
+    musicUrl: media.musicUrl,
     videoName: media.videoName,
     audioName: media.audioName,
+    musicName: media.musicName,
     videoDuration: media.videoDuration,
     audioDuration: media.audioDuration,
+    musicDuration: media.musicDuration,
+    musicVolume: media.musicVolume,
   };
   tasks.value.push(...generatedTasks.map((task) => ({
     ...inherited,
     ...task,
     videoUrl: task.videoUrl || inherited.videoUrl,
     audioUrl: task.audioUrl || inherited.audioUrl,
+    musicUrl: task.musicUrl || inherited.musicUrl,
     videoName: task.videoName || inherited.videoName,
     audioName: task.audioName || inherited.audioName,
+    musicName: task.musicName || inherited.musicName,
     videoDuration: task.videoDuration || inherited.videoDuration,
     audioDuration: task.audioDuration || inherited.audioDuration,
+    musicDuration: task.musicDuration || inherited.musicDuration,
+    musicVolume: Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : inherited.musicVolume,
     exportStatus: '等待导出',
     exportProgress: 0,
   })));
