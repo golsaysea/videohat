@@ -4,18 +4,22 @@ import { toRaw } from 'vue';
 
 const DRAFT_KEY = 'reels_bulk_v4_scroll_editor';
 
+const STANDARD_COLUMNS = [
+  '任务名称',
+  '视频文件名',
+  '音频文件名',
+  '配乐文件名',
+  '配乐音量%',
+  '滚动标题',
+  '滚动正文',
+  '署名',
+];
+
+const createStandardColumns = () => STANDARD_COLUMNS.map((name) => ({ name, type: 'text' }));
+
 export const useBulkStore = defineStore('bulk', {
   state: () => ({
-    columns: [
-      { name: '任务名称', type: 'text' },
-      { name: '视频文件名', type: 'text' },
-      { name: '音频文件名', type: 'text' },
-      { name: '配乐文件名', type: 'text' },
-      { name: '配乐音量%', type: 'text' },
-      { name: '滚动标题', type: 'text' },
-      { name: '滚动正文', type: 'text' },
-      { name: '署名', type: 'text' },
-    ],
+    columns: createStandardColumns(),
     rows: [],
     templates: [],
     isLoaded: false,
@@ -27,12 +31,23 @@ export const useBulkStore = defineStore('bulk', {
         for (let i = 0; i < 15; i += 1) this.addRow(false);
       }
       if (this.templates.length === 0) this.addTemplate(false);
-      this.normalizeRows();
+      this.ensureStandardColumns();
       this.saveDraft();
     },
 
+    ensureStandardColumns() {
+      STANDARD_COLUMNS.forEach((name) => {
+        if (!this.columns.some((column) => column.name === name)) this.columns.push({ name, type: 'text' });
+      });
+      this.normalizeRows();
+    },
+
+    columnIndex(name) {
+      return this.columns.findIndex((column) => column.name === name);
+    },
+
     normalizeRows() {
-      if (!this.columns.length) this.columns.push({ name: '新列', type: 'text' });
+      if (!this.columns.length) this.columns = createStandardColumns();
       this.columns.forEach((column) => {
         if (!column.type) column.type = 'text';
       });
@@ -117,7 +132,9 @@ export const useBulkStore = defineStore('bulk', {
 
     clearAll() {
       if (window.confirm('清空所有数据？')) {
+        this.columns = createStandardColumns();
         this.rows = [];
+        this.templates = [];
         this.initTable();
       }
     },
