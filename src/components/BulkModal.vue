@@ -90,10 +90,10 @@
           </div>
         </aside>
 
-        <div class="min-w-0 border-r border-[#252b3a]">
+        <div class="min-h-0 min-w-0 overflow-hidden border-r border-[#252b3a]">
           <BulkTable />
         </div>
-        <div class="min-w-0 bg-[#121625]">
+        <div class="min-h-0 min-w-0 overflow-y-auto bg-[#121625]">
           <TemplateBindings />
         </div>
       </div>

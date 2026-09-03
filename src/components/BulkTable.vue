@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full flex-col bg-[#0a0a14]">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#0a0a14]">
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#2a2a3a] bg-[#121222] p-3">
       <button class="rounded border border-[#333] bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10" @click="store.addRow()">添加项目行</button>
       <button class="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-500/20" @click="pasteSmartCopy">智能粘贴文案</button>
@@ -22,7 +22,7 @@
       <span>{{ tableHint }}</span>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-auto overscroll-contain">
+    <div class="h-full min-h-0 flex-1 overflow-auto overscroll-contain pb-8">
       <table class="w-max min-w-full border-collapse">
         <thead>
           <tr>
