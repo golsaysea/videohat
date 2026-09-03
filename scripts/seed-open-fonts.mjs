@@ -10,6 +10,9 @@ const ownerId = process.env.FONT_OWNER_ID || 'official';
 const cacheDir = join(tmpdir(), 'videohat-open-fonts');
 const wranglerCli = join(process.cwd(), 'node_modules', 'wrangler', 'wrangler-dist', 'cli.js');
 const wrangler = (...args) => execFileSync(process.execPath, [wranglerCli, ...args], { stdio: 'inherit' });
+const wranglerText = (...args) => execFileSync(process.execPath, [wranglerCli, ...args], { encoding: 'utf8' });
+
+const googleCss = (family, weights = '400;700;900') => `google:${family}:wght@${weights}`;
 
 const fonts = [
   ['Anton', 'https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf'],
@@ -72,6 +75,56 @@ const fonts = [
   ['Noto Serif TC', 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf'],
   ['Noto Serif JP', 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf'],
   ['Noto Serif KR', 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifkr/NotoSerifKR%5Bwght%5D.ttf'],
+  ['Roboto', googleCss('Roboto')],
+  ['Roboto Condensed', googleCss('Roboto Condensed')],
+  ['Roboto Slab', googleCss('Roboto Slab')],
+  ['Open Sans', googleCss('Open Sans')],
+  ['Source Sans 3', googleCss('Source Sans 3')],
+  ['Source Serif 4', googleCss('Source Serif 4')],
+  ['Source Code Pro', googleCss('Source Code Pro')],
+  ['Work Sans', googleCss('Work Sans')],
+  ['Space Grotesk', googleCss('Space Grotesk')],
+  ['Lexend', googleCss('Lexend')],
+  ['Plus Jakarta Sans', googleCss('Plus Jakarta Sans')],
+  ['IBM Plex Sans', googleCss('IBM Plex Sans')],
+  ['IBM Plex Serif', googleCss('IBM Plex Serif')],
+  ['IBM Plex Mono', googleCss('IBM Plex Mono')],
+  ['Josefin Sans', googleCss('Josefin Sans')],
+  ['Jost', googleCss('Jost')],
+  ['Exo 2', googleCss('Exo 2')],
+  ['Titillium Web', googleCss('Titillium Web')],
+  ['Prompt', googleCss('Prompt')],
+  ['Heebo', googleCss('Heebo')],
+  ['Mulish', googleCss('Mulish')],
+  ['Figtree', googleCss('Figtree')],
+  ['Cabinet Grotesk', 'https://raw.githubusercontent.com/Indian-Type-Foundry/Cabinet-Grotesk/master/fonts/variable/CabinetGrotesk-Variable.ttf'],
+  ['Righteous', googleCss('Righteous', '400')],
+  ['Rowdies', googleCss('Rowdies', '300;400;700')],
+  ['Passion One', googleCss('Passion One', '400;700;900')],
+  ['Changa One', googleCss('Changa One', '400')],
+  ['Black Ops One', googleCss('Black Ops One', '400')],
+  ['Staatliches', googleCss('Staatliches', '400')],
+  ['Bowlby One SC', googleCss('Bowlby One SC', '400')],
+  ['Fugaz One', googleCss('Fugaz One', '400')],
+  ['Paytone One', googleCss('Paytone One', '400')],
+  ['Secular One', googleCss('Secular One', '400')],
+  ['Ultra', googleCss('Ultra', '400')],
+  ['Knewave', googleCss('Knewave', '400')],
+  ['Kalam', googleCss('Kalam', '300;400;700')],
+  ['Patrick Hand', googleCss('Patrick Hand', '400')],
+  ['Shadows Into Light', googleCss('Shadows Into Light', '400')],
+  ['Indie Flower', googleCss('Indie Flower', '400')],
+  ['Amatic SC', googleCss('Amatic SC', '400;700')],
+  ['Satisfy', googleCss('Satisfy', '400')],
+  ['Lobster', googleCss('Lobster', '400')],
+  ['Dela Gothic One', 'https://raw.githubusercontent.com/google/fonts/main/ofl/delagothicone/DelaGothicOne-Regular.ttf'],
+  ['Rampart One', 'https://raw.githubusercontent.com/google/fonts/main/ofl/rampartone/RampartOne-Regular.ttf'],
+  ['Reggae One', 'https://raw.githubusercontent.com/google/fonts/main/ofl/reggaeone/ReggaeOne-Regular.ttf'],
+  ['Zen Maru Gothic', 'https://raw.githubusercontent.com/google/fonts/main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf'],
+  ['Kiwi Maru', 'https://raw.githubusercontent.com/google/fonts/main/ofl/kiwimaru/KiwiMaru-Regular.ttf'],
+  ['Liu Jian Mao Cao', 'https://raw.githubusercontent.com/google/fonts/main/ofl/liujianmaocao/LiuJianMaoCao-Regular.ttf'],
+  ['Noto Sans HK', 'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanshk/NotoSansHK%5Bwght%5D.ttf'],
+  ['Noto Serif HK', 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifhk/NotoSerifHK%5Bwght%5D.ttf'],
 ];
 
 const slug = (value) => String(value || '')
@@ -99,15 +152,60 @@ const extFromUrl = (url) => {
   return match ? match[0].toLowerCase() : '.ttf';
 };
 
+const resolveGoogleCssFontUrl = async (source) => {
+  const [, family, axis = 'wght@400;700;900'] = source.match(/^google:([^:]+)(?::(.+))?$/) || [];
+  if (!family) return null;
+  const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replaceAll('%20', '+')}:${axis}&display=swap`;
+  const response = await fetch(cssUrl, { headers: { 'user-agent': 'Mozilla/5.0 VideoHat font seeder' } });
+  if (!response.ok) return null;
+  const css = await response.text();
+  const urls = [...css.matchAll(/url\((https:\/\/[^)]+)\)/g)].map((match) => match[1]);
+  return urls.at(-1) || null;
+};
+
+const resolveFontSource = async (source) => {
+  if (!String(source).startsWith('google:')) return { url: source, ext: extFromUrl(source) };
+  const url = await resolveGoogleCssFontUrl(source);
+  return url ? { url, ext: '.woff2' } : null;
+};
+
+const parseWranglerJson = (output) => {
+  const start = output.indexOf('[');
+  const end = output.lastIndexOf(']');
+  if (start < 0 || end < start) return [];
+  return JSON.parse(output.slice(start, end + 1));
+};
+
+const loadExistingFontKeys = () => {
+  try {
+    const output = wranglerText('d1', 'execute', database, '--remote', '--command', "SELECT object_key FROM assets WHERE kind = 'font';");
+    return new Set(parseWranglerJson(output).flatMap((item) => item.results || []).map((row) => row.object_key).filter(Boolean));
+  } catch (error) {
+    console.warn('Could not read existing font list, continuing without skip.');
+    return new Set();
+  }
+};
+
 mkdirSync(cacheDir, { recursive: true });
 const uploaded = [];
+const existingKeys = loadExistingFontKeys();
 
-for (const [family, url] of fonts) {
-  const ext = extFromUrl(url);
+for (const [family, source] of fonts) {
+  const resolved = await resolveFontSource(source);
+  if (!resolved) {
+    console.log(`Downloading ${family}... skip css lookup`);
+    continue;
+  }
+  const { url, ext } = resolved;
   const fileName = `${family}${ext}`.replace(/[\\/:*?"<>|]+/g, '-');
   const filePath = join(cacheDir, fileName);
   const objectKey = `${ownerId}/font/${slug(fileName)}`;
   const contentType = contentTypeFor(fileName);
+
+  if (existingKeys.has(objectKey)) {
+    console.log(`Skipping ${family}... already registered`);
+    continue;
+  }
 
   process.stdout.write(`Downloading ${family}... `);
   const response = await fetch(url, { headers: { 'user-agent': 'VideoHat font seeder' } });
@@ -142,8 +240,8 @@ for (const [family, url] of fonts) {
 }
 
 if (!uploaded.length) {
-  console.log('No fonts uploaded.');
-  process.exit(1);
+  console.log('No new fonts uploaded.');
+  process.exit(0);
 }
 
 const sql = uploaded.map((font) => `INSERT INTO assets (id, owner_id, project_id, kind, file_name, object_key, content_type, size) VALUES ('${sqlEscape(font.id)}', '${sqlEscape(font.ownerId)}', '${sqlEscape(font.projectId)}', 'font', '${sqlEscape(font.fileName)}', '${sqlEscape(font.objectKey)}', '${sqlEscape(font.contentType)}', ${font.size}) ON CONFLICT(object_key) DO UPDATE SET file_name = excluded.file_name, content_type = excluded.content_type, size = excluded.size, created_at = CURRENT_TIMESTAMP;`).join('\n');
