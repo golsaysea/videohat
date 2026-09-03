@@ -1125,6 +1125,11 @@ let musicMonitorGainNode = null;
 let mediaDestination = null;
 let mediaRecorder = null;
 let exportStopTimer = 0;
+let activeExportTick = null;
+let exportStartedAt = 0;
+let exportPausedTotalMs = 0;
+let exportPauseStartedAt = 0;
+let screenWakeLock = null;
 let wasExporting = false;
 
 const formatDuration = (value) => {
@@ -2382,6 +2387,69 @@ const startExportFromDialog = async () => {
   if (exportDialogMode.value === 'queue') await exportQueue();
   else await exportCurrentTask({ confirmMp4: true });
 };
+const requestExportWakeLock = async () => {
+  if (!('wakeLock' in navigator) || screenWakeLock) return;
+  try {
+    screenWakeLock = await navigator.wakeLock.request('screen');
+    screenWakeLock.addEventListener?.('release', () => { screenWakeLock = null; });
+  } catch (error) {
+    console.warn('Screen wake lock unavailable', error);
+  }
+};
+
+const releaseExportWakeLock = async () => {
+  const lock = screenWakeLock;
+  screenWakeLock = null;
+  try { await lock?.release?.(); } catch (_) {}
+};
+
+const playExportMediaAt = async (time = 0) => {
+  const useSeparateAudio = Boolean(media.audioUrl);
+  if (videoEl.value && media.videoUrl) {
+    videoEl.value.loop = true;
+    videoEl.value.muted = useSeparateAudio;
+    videoEl.value.currentTime = media.videoDuration ? time % media.videoDuration : 0;
+    await videoEl.value.play().catch(() => {});
+  }
+  if (audioEl.value && useSeparateAudio) {
+    audioEl.value.currentTime = Math.min(time, media.audioDuration || time);
+    await audioEl.value.play().catch(() => {});
+  }
+  if (musicEl.value && media.musicUrl) {
+    musicEl.value.loop = true;
+    musicEl.value.volume = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
+    musicEl.value.currentTime = media.musicDuration ? time % media.musicDuration : 0;
+    await musicEl.value.play().catch(() => {});
+  }
+};
+
+const pauseExportForHiddenPage = () => {
+  if (!isExporting.value || !wasExporting || mediaRecorder?.state !== 'recording') return;
+  exportPauseStartedAt = performance.now();
+  try { mediaRecorder.pause(); } catch (_) {}
+  if (exportStopTimer) cancelAnimationFrame(exportStopTimer);
+  exportStopTimer = 0;
+  stopPlayback();
+  exportStatus.value = '页面已隐藏，导出暂停中';
+  setTaskExportState(selectedTaskIndex.value, '页面已隐藏，回到页面后继续导出', exportProgress.value);
+};
+
+const resumeExportAfterHiddenPage = async () => {
+  if (!isExporting.value || !wasExporting || mediaRecorder?.state !== 'paused') return;
+  if (exportPauseStartedAt) exportPausedTotalMs += performance.now() - exportPauseStartedAt;
+  exportPauseStartedAt = 0;
+  await requestExportWakeLock();
+  await playExportMediaAt(previewTime.value);
+  try { mediaRecorder.resume(); } catch (_) {}
+  exportStatus.value = '继续导出 ' + formatDuration(previewTime.value) + ' / ' + formatDuration(activeDuration.value);
+  if (activeExportTick) exportStopTimer = requestAnimationFrame(activeExportTick);
+};
+
+const handleExportVisibilityChange = () => {
+  if (document.hidden) pauseExportForHiddenPage();
+  else resumeExportAfterHiddenPage();
+};
+
 const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   if (isExporting.value) return;
   const canvas = previewCanvas.value;
@@ -2407,6 +2475,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   setTaskExportState(selectedTaskIndex.value, '准备素材', 0);
   isExporting.value = true;
   wasExporting = true;
+  await requestExportWakeLock();
   const duration = activeDuration.value;
   const useSeparateAudio = Boolean(media.audioUrl);
   const useVideoAudio = !useSeparateAudio && Boolean(media.videoUrl);
@@ -2415,22 +2484,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
     : [];
 
   previewTime.value = 0;
-  if (videoEl.value && media.videoUrl) {
-    videoEl.value.loop = true;
-    videoEl.value.muted = useSeparateAudio;
-    videoEl.value.currentTime = 0;
-    await videoEl.value.play().catch(() => {});
-  }
-  if (audioEl.value && useSeparateAudio) {
-    audioEl.value.currentTime = 0;
-    await audioEl.value.play().catch(() => {});
-  }
-  if (musicEl.value && media.musicUrl) {
-    musicEl.value.loop = true;
-    musicEl.value.volume = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
-    musicEl.value.currentTime = 0;
-    await musicEl.value.play().catch(() => {});
-  }
+  await playExportMediaAt(0);
   if (videoEl.value && media.videoUrl) {
     exportStatus.value = '等待视频帧';
     setTaskExportState(selectedTaskIndex.value, '等待视频帧', exportProgress.value);
@@ -2441,6 +2495,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
       setTaskExportState(selectedTaskIndex.value, '视频帧未就绪', 0);
       isExporting.value = false;
       wasExporting = false;
+      await releaseExportWakeLock();
       stopPlayback();
       drawPreview();
       return;
@@ -2458,6 +2513,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
     window.alert('当前浏览器不支持 canvas 视频录制，请换 Chrome / Edge 最新版。');
     isExporting.value = false;
     wasExporting = false;
+    await releaseExportWakeLock();
     stopPlayback();
     return;
   }
@@ -2494,8 +2550,11 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
         window.alert('MP4 转码失败，没有下载 WebM。你可以改选“WebM：本地最快”作为备用，或换 Chrome / Edge 再试。');
         exportStatus.value = 'MP4 转码失败';
         setTaskExportState(selectedTaskIndex.value, 'MP4 转码失败', exportProgress.value);
+        activeExportTick = null;
+        exportStopTimer = 0;
         isExporting.value = false;
         wasExporting = false;
+        await releaseExportWakeLock();
         stopPlayback();
         previewTime.value = 0;
         drawPreview();
@@ -2508,18 +2567,23 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
     triggerDownload(url, exportFileName(ext));
     exportProgress.value = 1;
     exportStatus.value = `已导出 ${ext.toUpperCase()}`;
+    activeExportTick = null;
+    exportStopTimer = 0;
     isExporting.value = false;
     wasExporting = false;
+    await releaseExportWakeLock();
     stopPlayback();
     previewTime.value = 0;
     drawPreview();
   };
 
   mediaRecorder.start();
-  const startedAt = performance.now();
-  const tick = () => {
-    if (!isExporting.value) return;
-    const elapsed = (performance.now() - startedAt) / 1000;
+  exportStartedAt = performance.now();
+  exportPausedTotalMs = 0;
+  exportPauseStartedAt = 0;
+  activeExportTick = () => {
+    if (!isExporting.value || mediaRecorder?.state === 'paused') return;
+    const elapsed = (performance.now() - exportStartedAt - exportPausedTotalMs) / 1000;
     previewTime.value = Math.min(elapsed, duration);
     const recordProgressMax = exportOptions.format === 'mp4' ? 0.82 : 0.99;
     exportProgress.value = Math.min(recordProgressMax, (previewTime.value / duration) * recordProgressMax);
@@ -2530,9 +2594,9 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
       if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
       return;
     }
-    exportStopTimer = requestAnimationFrame(tick);
+    exportStopTimer = requestAnimationFrame(activeExportTick);
   };
-  exportStopTimer = requestAnimationFrame(tick);
+  exportStopTimer = requestAnimationFrame(activeExportTick);
 };
 
 const exportQueue = async () => {
@@ -3147,6 +3211,7 @@ onMounted(async () => {
   await rehydrateSelectedTaskMediaFromLocalFolder();
   refreshOfficialTemplates();
   refreshCloudFonts();
+  document.addEventListener('visibilitychange', handleExportVisibilityChange);
   animationFrameId = requestAnimationFrame(renderLoop);
 });
 
@@ -3154,6 +3219,8 @@ onUnmounted(() => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   if (exportStopTimer) cancelAnimationFrame(exportStopTimer);
   if (localDraftTimer) window.clearTimeout(localDraftTimer);
+  document.removeEventListener('visibilitychange', handleExportVisibilityChange);
+  releaseExportWakeLock();
   stopPlayback();
 });
 </script>
