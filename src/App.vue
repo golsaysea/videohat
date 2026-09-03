@@ -171,6 +171,7 @@
             <CheckField v-model="overlayState.signature_enabled" label="显示署名" />
             <TextField v-model="overlayState.signature_text" label="署名文字" />
             <FontPreviewPicker v-model="overlayState.signature_font_family" label="署名字体预览" sample="@ VideoHat" />
+            <SelectField v-model="overlayState.signature_position" label="署名位置" :options="signaturePositionOptions" />
             <SelectField v-model="overlayState.signature_align" label="署名对齐" :options="alignOptions" />
             <SelectField v-model="overlayState.signature_case" label="署名大小写" :options="caseOptions" />
             <div class="grid grid-cols-2 gap-3">
@@ -182,6 +183,15 @@
             <SliderControl v-model="overlayState.signature_fontsize" label="署名字号" :min="14" :max="120" />
             <SliderControl v-model="overlayState.signature_font_weight" label="署名粗细" :min="100" :max="900" :step="100" />
             <ColorField v-model="overlayState.signature_color" label="署名颜色" />
+            <CheckField v-model="overlayState.signature_bg_enabled" label="署名黑底背景" />
+            <ColorField v-model="overlayState.signature_bg_color" label="署名背景颜色" />
+            <SliderControl v-model="overlayState.signature_bg_opacity" label="背景透明度" :min="0" :max="100" suffix="%" />
+            <div class="grid grid-cols-2 gap-3">
+              <NumberField v-model="overlayState.signature_bg_radius" label="背景圆角" :min="0" />
+              <NumberField v-model="overlayState.signature_bg_pad_x" label="背景横距" :min="0" />
+              <NumberField v-model="overlayState.signature_bg_pad_y" label="背景纵距" :min="0" />
+              <button class="self-end rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 hover:bg-cyan-500/20" @click="applySignaturePositionPreset">应用位置</button>
+            </div>
             <CheckField v-model="overlayState.signature_stroke_enabled" label="署名描边" />
             <ColorField v-model="overlayState.signature_stroke_color" label="署名描边颜色" />
             <SliderControl v-model="overlayState.signature_stroke_width" label="署名描边宽度" :min="0" :max="12" />
@@ -409,6 +419,45 @@
       </div>
     </div>
 
+    <div v-if="fontLibraryModal.open" class="fixed inset-0 z-[60] flex items-center justify-center bg-[#05070d]/90 p-6 backdrop-blur">
+      <div class="grid max-h-[92vh] w-[min(1120px,96vw)] grid-cols-[210px_minmax(0,1fr)_300px] overflow-hidden rounded-lg border border-[#343b4f] bg-[#141625] shadow-2xl">
+        <aside class="border-r border-[#303648] bg-[#202236] p-4">
+          <div class="mb-4 text-sm font-bold text-white">字体库</div>
+          <button v-for="category in fontCategories" :key="category.value" class="mb-2 block w-full rounded px-3 py-2 text-left text-xs transition" :class="fontLibraryModal.category === category.value ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-white/10'" @click="fontLibraryModal.category = category.value">{{ category.label }}</button>
+        </aside>
+        <section class="min-h-0 overflow-hidden">
+          <div class="border-b border-[#303648] p-4">
+            <input v-model="fontLibraryModal.query" class="w-full rounded border border-[#33394a] bg-[#070a12] px-3 py-2 text-sm text-white outline-none focus:border-blue-500" placeholder="搜索字体：如 英文、标题、中文、手写..." />
+            <div class="mt-3 text-xs text-gray-500">当前字段：{{ fontLibraryModal.label }}，点击字体卡片即可应用。</div>
+          </div>
+          <div class="grid max-h-[72vh] grid-cols-2 gap-3 overflow-y-auto p-4">
+            <button v-for="font in filteredFontChoices" :key="font.value" class="rounded border bg-black/20 p-3 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10" :class="fontLibraryModal.value === font.value ? 'border-cyan-400 ring-1 ring-cyan-400/50' : 'border-[#303648]'" @click="applyFontChoice(font)">
+              <div class="flex items-center justify-between gap-2">
+                <span class="truncate text-sm font-bold text-white" :style="fontPreviewStyle(font)">{{ font.label }}</span>
+                <span class="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] text-blue-100">应用</span>
+              </div>
+              <div class="mt-3 truncate text-lg text-white" :style="fontPreviewStyle(font)">{{ fontLibraryModal.sample || font.sample }}</div>
+              <div class="mt-2 flex flex-wrap gap-1"><span v-for="tag in font.tags" :key="tag" class="rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-100">{{ tag }}</span></div>
+            </button>
+          </div>
+        </section>
+        <aside class="border-l border-[#303648] bg-[#101421] p-5">
+          <div class="flex items-center justify-between">
+            <h3 class="m-0 text-sm font-bold text-cyan-300">当前预览</h3>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-1.5 text-xs text-gray-200 hover:bg-[#2b3146]" @click="fontLibraryModal.open = false">关闭</button>
+          </div>
+          <div class="mt-5 rounded border border-[#303648] bg-black/30 p-4">
+            <div class="text-xs text-gray-500">正在使用</div>
+            <div class="mt-2 truncate text-sm font-bold text-white">{{ fontLibraryModal.value || 'Arial' }}</div>
+          </div>
+          <div class="mt-5 flex aspect-[9/12] items-center justify-center rounded border border-[#303648] bg-gradient-to-b from-[#171b2b] to-black p-5 text-center">
+            <div class="text-2xl leading-tight text-white" :style="fontPreviewStyle({ value: fontLibraryModal.value || 'Arial', weight: 900 })">{{ fontLibraryModal.sample || 'Make it unforgettable' }}</div>
+          </div>
+          <p class="mt-4 text-xs leading-relaxed text-gray-500">R2 字体首次点击会加载到浏览器，之后正文、标题、署名都会实时用同一套 Canvas 字体渲染。</p>
+        </aside>
+      </div>
+    </div>
+
     <div v-if="showSettingsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-[#05070d]/90 p-6 backdrop-blur">
       <div class="flex max-h-[90vh] w-[min(980px,94vw)] flex-col overflow-hidden rounded-lg border border-[#343b4f] bg-[#111522] shadow-2xl">
         <div class="flex shrink-0 items-center justify-between border-b border-[#2a2f3a] px-5 py-4">
@@ -629,25 +678,90 @@ const CheckField = defineComponent({
 });
 
 const fontPresets = [
-  { value: 'Arial', label: 'Impact Clean', sample: 'GOD WALKS WITH ME' },
-  { value: 'Arial Black', label: 'Bold Poster', sample: 'PRAYER NOW' },
-  { value: 'Georgia', label: 'Classic Serif', sample: 'Grace & Hope' },
-  { value: 'Trebuchet MS', label: 'Soft Humanist', sample: 'Beautiful Plan' },
-  { value: 'Verdana', label: 'Readable Wide', sample: 'Every Step' },
-  { value: 'Tahoma', label: 'Sharp Caption', sample: 'Stay Protected' },
-  { value: 'Impact', label: 'Viral Heavy', sample: 'BREAKING FAITH' },
-  { value: 'Courier New', label: 'Typewriter', sample: 'Psalm 91' },
+  { value: 'Arial', label: 'Arial', sample: 'Make it unforgettable', category: 'sans', tags: ['sans', 'system'], weight: 800 },
+  { value: 'Arial Black', label: 'Arial Black', sample: 'PRAYER NOW', category: 'display', tags: ['display', 'heavy'], weight: 900 },
+  { value: 'Georgia', label: 'Georgia', sample: 'Grace & Hope', category: 'serif', tags: ['serif', 'classic'], weight: 700 },
+  { value: 'Trebuchet MS', label: 'Trebuchet MS', sample: 'Beautiful Plan', category: 'sans', tags: ['sans', 'soft'], weight: 800 },
+  { value: 'Verdana', label: 'Verdana', sample: 'Every Step', category: 'sans', tags: ['sans', 'wide'], weight: 800 },
+  { value: 'Tahoma', label: 'Tahoma', sample: 'Stay Protected', category: 'sans', tags: ['sans', 'sharp'], weight: 800 },
+  { value: 'Impact', label: 'Impact', sample: 'BREAKING FAITH', category: 'display', tags: ['display', 'viral'], weight: 900 },
+  { value: 'Courier New', label: 'Courier New', sample: 'Psalm 91', category: 'mono', tags: ['mono'], weight: 700 },
 ];
+
+const inferFontCategory = (family) => {
+  const name = String(family || '').toLowerCase();
+  if (name.includes('noto') || name.includes('zcool') || name.includes('cang') || name.includes('zheng') || name.includes('sc') || name.includes('tc') || name.includes('jp') || name.includes('kr')) return 'cjk';
+  if (name.includes('serif') || name.includes('lora') || name.includes('playfair') || name.includes('bitter') || name.includes('crimson') || name.includes('cormorant')) return 'serif';
+  if (name.includes('script') || name.includes('caveat') || name.includes('pacifico') || name.includes('dancing')) return 'script';
+  if (name.includes('anton') || name.includes('bebas') || name.includes('display') || name.includes('black') || name.includes('impact') || name.includes('teko') || name.includes('rajdhani') || name.includes('bangers')) return 'display';
+  if (name.includes('mono')) return 'mono';
+  return 'sans';
+};
 
 const fontChoices = computed(() => [
   ...fontPresets,
-  ...cloudFonts.value.map((font) => ({
-    ...font,
-    value: font.family,
-    label: 'R2 · ' + font.family,
-    sample: 'VideoHat Font',
-  })),
+  ...cloudFonts.value.map((font) => {
+    const category = inferFontCategory(font.family);
+    return {
+      ...font,
+      value: font.family,
+      label: font.family,
+      sample: category === 'cjk' ? '高级字幕预览' : 'Make it unforgettable',
+      category,
+      tags: ['R2', category],
+      weight: category === 'serif' ? 700 : 900,
+    };
+  }),
 ]);
+
+const fontCategories = [
+  { value: 'all', label: '所有字体' },
+  { value: 'display', label: '展示体 / 标题' },
+  { value: 'sans', label: '无衬线 Sans' },
+  { value: 'serif', label: '衬线 Serif' },
+  { value: 'script', label: '手写 Script' },
+  { value: 'mono', label: '等宽 Mono' },
+  { value: 'cjk', label: '中文/日韩 CJK' },
+];
+
+const fontLibraryModal = reactive({
+  open: false,
+  label: '',
+  sample: '',
+  value: 'Arial',
+  query: '',
+  category: 'all',
+  apply: null,
+});
+
+const filteredFontChoices = computed(() => {
+  const query = fontLibraryModal.query.trim().toLowerCase();
+  return fontChoices.value.filter((font) => {
+    const categoryOk = fontLibraryModal.category === 'all' || font.category === fontLibraryModal.category;
+    const haystack = [font.value, font.label, font.sample, ...(font.tags || [])].join(' ').toLowerCase();
+    return categoryOk && (!query || haystack.includes(query));
+  });
+});
+
+const openFontLibraryPicker = (payload) => {
+  fontLibraryModal.open = true;
+  fontLibraryModal.label = payload.label || '字体';
+  fontLibraryModal.sample = payload.sample || 'Make it unforgettable';
+  fontLibraryModal.value = payload.value || 'Arial';
+  fontLibraryModal.apply = payload.apply;
+  fontLibraryModal.query = '';
+};
+
+const applyFontChoice = async (font) => {
+  await ensureCloudFontLoaded(font);
+  fontLibraryModal.value = font.value;
+  if (fontLibraryModal.apply) fontLibraryModal.apply(font.value);
+};
+
+const fontPreviewStyle = (font) => ({
+  fontFamily: '"' + (font?.value || 'Arial') + '", Arial, sans-serif',
+  fontWeight: font?.weight || 800,
+});
 
 const FontPreviewPicker = defineComponent({
   props: { modelValue: String, label: String, sample: String },
@@ -658,31 +772,27 @@ const FontPreviewPicker = defineComponent({
         h('span', { class: 'text-xs text-gray-500' }, props.label),
         h('span', { class: 'max-w-[160px] truncate text-[11px] text-cyan-300' }, props.modelValue || 'Arial'),
       ]),
-      h('div', { class: 'grid grid-cols-2 gap-2' }, fontChoices.value.map((font) => {
-        const active = (props.modelValue || 'Arial') === font.value;
-        return h('button', {
-          type: 'button',
-          class: [
-            'min-h-[74px] rounded border bg-black/20 p-2 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10',
-            active ? 'border-cyan-400 ring-1 ring-cyan-400/50' : 'border-[#303648]',
-          ],
-          onClick: () => {
-            ensureCloudFontLoaded(font);
-            emit('update:modelValue', font.value);
+      h('button', {
+        type: 'button',
+        class: 'w-full rounded border border-[#303648] bg-black/20 p-3 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10',
+        onClick: () => openFontLibraryPicker({
+          label: props.label,
+          sample: props.sample,
+          value: props.modelValue || 'Arial',
+          apply: (value) => emit('update:modelValue', value),
+        }),
+      }, [
+        h('span', { class: 'block truncate text-[11px] text-gray-500' }, '打开字体库 / 点击选择应用'),
+        h('span', {
+          class: 'mt-2 block truncate leading-tight text-white',
+          style: {
+            fontFamily: `"${props.modelValue || 'Arial'}", Arial, sans-serif`,
+            fontWeight: 900,
+            fontSize: '19px',
+            letterSpacing: '0',
           },
-        }, [
-          h('span', { class: 'block truncate text-[11px] text-gray-500' }, font.label),
-          h('span', {
-            class: 'mt-2 block leading-tight text-white',
-            style: {
-              fontFamily: `"${font.value}", Arial, sans-serif`,
-              fontWeight: font.value === 'Georgia' || font.value === 'Courier New' ? 700 : 900,
-              fontSize: '17px',
-              letterSpacing: '0',
-            },
-          }, props.sample || font.sample),
-        ]);
-      })),
+        }, props.sample || 'Make it unforgettable'),
+      ]),
     ]);
   },
 });
@@ -803,7 +913,8 @@ const overlayState = reactive(createScrollOverlay({
   signature_font_weight: 700,
   signature_font_family: 'Georgia',
   signature_color: '#FFFFFF',
-  signature_align: 'center',
+  signature_align: 'right',
+  signature_position: 'top-right',
   signature_case: 'preserve',
   signature_line_spacing: 4,
   signature_stroke_enabled: true,
@@ -812,6 +923,12 @@ const overlayState = reactive(createScrollOverlay({
   signature_shadow_enabled: true,
   signature_shadow_color: '#000000',
   signature_shadow_blur: 5,
+  signature_bg_enabled: true,
+  signature_bg_color: '#000000',
+  signature_bg_opacity: 55,
+  signature_bg_radius: 18,
+  signature_bg_pad_x: 22,
+  signature_bg_pad_y: 12,
   scroll_x_anchor: 'center',
   scroll_from_x: 540,
   scroll_to_x: 540,
@@ -889,6 +1006,15 @@ const exportScopeOptions = [
   { value: 'current', label: '仅当前任务' },
   { value: 'queue', label: '全部任务队列' },
 ];
+const signaturePositionOptions = [
+  { value: 'top-right', label: '右上角' },
+  { value: 'top-left', label: '左上角' },
+  { value: 'bottom-right', label: '右下角' },
+  { value: 'bottom-left', label: '左下角' },
+  { value: 'bottom-center', label: '底部居中' },
+  { value: 'custom', label: '自定义坐标' },
+];
+
 const durationModeOptions = [
   { value: 'auto', label: '自动：音频优先，否则视频' },
   { value: 'audio', label: '按音频时长' },
@@ -1326,9 +1452,10 @@ const centerOverlayDefaults = () => {
   overlayState.bg_border_enabled = false;
   overlayState.signature_enabled = false;
   overlayState.signature_text = '';
-  overlayState.signature_x = 540;
-  overlayState.signature_y = 1640;
-  overlayState.signature_width = 900;
+  overlayState.signature_position = 'top-right';
+  overlayState.signature_x = 980;
+  overlayState.signature_y = 115;
+  overlayState.signature_width = 420;
   overlayState.feather_top_offset = 0;
   overlayState.feather_bottom_offset = 0;
 };
@@ -1898,6 +2025,25 @@ const wrapCanvasText = (ctx, text, maxWidth) => {
   return lines;
 };
 
+const drawRoundedRect = (ctx, x, y, width, height, radius) => {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, r);
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+};
+
 const drawSignature = (ctx) => {
   if (!overlayState.signature_enabled) return;
   const text = applyTextCase(overlayState.signature_text, overlayState.signature_case).trim();
@@ -1917,6 +2063,25 @@ const drawSignature = (ctx) => {
   ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}", Arial, sans-serif`;
   ctx.textBaseline = 'top';
   ctx.lineJoin = 'round';
+  const lines = wrapCanvasText(ctx, text, width);
+  const measuredLines = lines.map((line) => ctx.measureText(line).width);
+  const textW = Math.max(1, ...measuredLines);
+  const textH = Math.max(fontSize, (lines.length - 1) * lineHeight + fontSize * 1.15);
+  const padX = Number(overlayState.signature_bg_pad_x) || 0;
+  const padY = Number(overlayState.signature_bg_pad_y) || 0;
+  let contentX = boxX;
+  if (align === 'center' || align === 'justify') contentX = x - textW / 2;
+  if (align === 'right') contentX = boxX + width - textW;
+
+  if (overlayState.signature_bg_enabled && Number(overlayState.signature_bg_opacity) > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, Number(overlayState.signature_bg_opacity) / 100));
+    ctx.fillStyle = overlayState.signature_bg_color || '#000000';
+    drawRoundedRect(ctx, contentX - padX, y - padY, textW + padX * 2, textH + padY * 2, Number(overlayState.signature_bg_radius) || 0);
+    ctx.fill();
+    ctx.restore();
+  }
+
   ctx.fillStyle = overlayState.signature_color || '#FFFFFF';
   if (overlayState.signature_shadow_enabled) {
     ctx.shadowColor = overlayState.signature_shadow_color || '#000000';
@@ -1924,8 +2089,6 @@ const drawSignature = (ctx) => {
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = Math.max(1, Math.round(fontSize * 0.08));
   }
-
-  const lines = wrapCanvasText(ctx, text, width);
   lines.forEach((line, index) => {
     const measured = ctx.measureText(line).width;
     let lineX = boxX;
@@ -2841,6 +3004,39 @@ const handleGeneratedTasks = (generatedTasks) => {
   showBulkModal.value = false;
 };
 
+const applySignaturePositionPreset = () => {
+  const preset = overlayState.signature_position || 'top-right';
+  if (preset === 'custom') return;
+  const marginX = 82;
+  const marginY = 115;
+  if (preset === 'top-right') {
+    overlayState.signature_x = EXPORT_WIDTH - marginX;
+    overlayState.signature_y = marginY;
+    overlayState.signature_width = 420;
+    overlayState.signature_align = 'right';
+  } else if (preset === 'top-left') {
+    overlayState.signature_x = marginX;
+    overlayState.signature_y = marginY;
+    overlayState.signature_width = 420;
+    overlayState.signature_align = 'left';
+  } else if (preset === 'bottom-right') {
+    overlayState.signature_x = EXPORT_WIDTH - marginX;
+    overlayState.signature_y = EXPORT_HEIGHT - 250;
+    overlayState.signature_width = 420;
+    overlayState.signature_align = 'right';
+  } else if (preset === 'bottom-left') {
+    overlayState.signature_x = marginX;
+    overlayState.signature_y = EXPORT_HEIGHT - 250;
+    overlayState.signature_width = 420;
+    overlayState.signature_align = 'left';
+  } else if (preset === 'bottom-center') {
+    overlayState.signature_x = EXPORT_WIDTH / 2;
+    overlayState.signature_y = EXPORT_HEIGHT - 230;
+    overlayState.signature_width = 760;
+    overlayState.signature_align = 'center';
+  }
+};
+
 watch(overlayState, () => {
   syncSelectedTask();
   scheduleLocalProjectSave();
@@ -2848,6 +3044,7 @@ watch(overlayState, () => {
 
 }, { deep: true });
 watch(exportOptions, scheduleLocalProjectSave, { deep: true });
+watch(() => overlayState.signature_position, applySignaturePositionPreset);
 watch(activeDuration, () => {
   if (previewTime.value > activeDuration.value) previewTime.value = 0;
 });
