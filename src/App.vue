@@ -38,14 +38,20 @@
             <span class="mt-1 block text-xs text-gray-500">优先保存文件授权，刷新后可重新读取 MP4</span>
           </button>
           <button type="button" class="block w-full rounded border border-dashed border-[#3a4152] bg-[#171b2b] p-3 text-left text-sm text-gray-300 transition hover:border-blue-500 hover:text-white" @click="chooseLocalMedia('audio')">
-            <span class="block font-semibold">上传音频</span>
-            <span class="mt-1 block text-xs text-gray-500">有音频时默认按音频时长导出</span>
+            <span class="block font-semibold">上传配音</span>
+            <span class="mt-1 block text-xs text-gray-500">有配音时默认按配音时长导出</span>
+          </button>
+          <button type="button" class="block w-full rounded border border-dashed border-purple-500/40 bg-purple-500/10 p-3 text-left text-sm text-purple-100 transition hover:border-purple-300 hover:bg-purple-500/20" @click="chooseLocalMedia('music')">
+            <span class="block font-semibold">上传背景音 / 配乐</span>
+            <span class="mt-1 block text-xs text-purple-200/70">可调音量、起点，默认循环铺满成片</span>
           </button>
           <input ref="videoFileInput" class="hidden" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.quicktime" @change="event => loadMedia(event, 'video')" />
           <input ref="audioFileInput" class="hidden" type="file" accept="audio/*" @change="event => loadMedia(event, 'audio')" />
-          <div class="grid grid-cols-2 gap-2 text-xs text-gray-400">
+          <input ref="musicFileInput" class="hidden" type="file" accept="audio/*" @change="event => loadMedia(event, 'music')" />
+          <div class="grid grid-cols-3 gap-2 text-xs text-gray-400">
             <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">视频：{{ formatDuration(media.videoDuration) }}</div>
-            <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">音频：{{ formatDuration(media.audioDuration) }}</div>
+            <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">配音：{{ formatDuration(media.audioDuration) }}</div>
+            <div class="rounded border border-[#2a2f3a] bg-black/20 p-2">背景音：{{ formatDuration(media.musicDuration) }}</div>
           </div>
           <div v-if="mediaProgress > 0 && mediaProgress < 1" class="space-y-1 rounded border border-blue-500/30 bg-blue-500/10 p-2">
             <div class="flex items-center justify-between text-xs text-blue-100">
@@ -146,11 +152,21 @@
             <CheckField v-model="exportOptions.useGpu" label="GPU/硬件编码（后端）" />
             <CheckField v-model="exportOptions.useMemoryDecoder" label="极速内存解码" />
             <CheckField v-model="exportOptions.fastAlphaMode" label="极速贴合模式" />
+            <CheckField v-model="exportOptions.smoothFrameCapture" label="流畅优先防掉帧" />
           </Panel>
 
           <Panel title="字幕内容">
             <TextField v-model="overlayState.scroll_title" label="滚动标题" />
             <TextAreaField v-model="overlayState.content" label="滚动正文" :rows="7" />
+          </Panel>
+
+          <Panel title="背景音 / 配乐">
+            <button type="button" class="rounded border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs font-semibold text-purple-100 hover:bg-purple-500/20" @click="chooseLocalMedia('music')">选择背景音文件</button>
+            <div class="truncate rounded border border-[#2a2f3a] bg-black/20 p-2 text-xs text-gray-400">{{ media.musicName || '未选择背景音' }}</div>
+            <SliderControl v-model="media.musicVolume" label="背景音音量" :min="0" :max="100" suffix="%" />
+            <NumberField v-model="media.musicStart" label="起点秒" :min="0" />
+            <CheckField v-model="media.musicLoop" label="循环铺满导出" />
+            <button type="button" class="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20" :disabled="!media.musicUrl" @click="clearMusicFile">清除背景音</button>
           </Panel>
 
           <Panel title="署名">
@@ -318,6 +334,7 @@
               </div>
               <CheckField v-model="exportOptions.useGpu" label="GPU/硬件编码（后端）" />
               <CheckField v-model="exportOptions.useMemoryDecoder" label="极速内存解码" />
+              <CheckField v-model="exportOptions.smoothFrameCapture" label="流畅优先防掉帧" />
             </Panel>
           </div>
 
@@ -462,14 +479,15 @@
             <h3 class="m-0 text-sm font-bold text-cyan-300">Google Drive 媒体池</h3>
             <button class="text-xs text-blue-400 hover:text-blue-300" :disabled="driveBusy" @click="connectGoogleDrive">连接</button>
           </div>
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-3 gap-2">
             <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('video')">选云盘视频</button>
-            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('audio')">选云盘音频</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('audio')">选云盘配音</button>
+            <button class="rounded border border-[#3a4152] bg-[#202538] px-3 py-2 text-xs hover:bg-[#2b3146]" :disabled="driveBusy" @click="pickGoogleDriveMedia('music')">选云盘配乐</button>
           </div>
           <p class="text-xs leading-relaxed text-gray-500">{{ driveStatus }}</p>
           <div v-if="mediaPool.length" class="max-h-36 space-y-2 overflow-y-auto">
             <div v-for="item in mediaPool" :key="item.provider + '-' + item.id" class="rounded border border-[#2a2f3a] bg-black/20 p-2">
-              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : '音频' }} · {{ item.name }}</div>
+              <div class="truncate text-xs font-semibold text-white">{{ item.kind === 'video' ? '视频' : (item.kind === 'music' ? '配乐' : '配音') }} · {{ item.name }}</div>
               <div class="mt-2 flex gap-2">
                 <button class="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[11px] text-blue-200 hover:bg-blue-500/20" :disabled="driveBusy" @click="useDriveMediaForCurrent(item)">用于当前任务</button>
                 <button class="rounded border border-[#3a4152] px-2 py-1 text-[11px] text-gray-400 hover:bg-white/5" @click="removeMediaPoolItem(item)">移除</button>
@@ -849,6 +867,7 @@ const audioEl = ref(null);
 const musicEl = ref(null);
 const videoFileInput = ref(null);
 const audioFileInput = ref(null);
+const musicFileInput = ref(null);
 const showBulkModal = ref(false);
 const showSettingsModal = ref(false);
 const showTemplateLibrary = ref(false);
@@ -992,11 +1011,14 @@ const media = reactive({
   audioDuration: 0,
   musicDuration: 0,
   musicVolume: 30,
+  musicStart: 0,
+  musicLoop: true,
   videoAsset: null,
   audioAsset: null,
   musicAsset: null,
   videoDriveItem: null,
   audioDriveItem: null,
+  musicDriveItem: null,
 });
 
 const exportOptions = reactive({
@@ -1018,10 +1040,11 @@ const exportOptions = reactive({
   useGpu: true,
   useMemoryDecoder: true,
   fastAlphaMode: true,
+  smoothFrameCapture: true,
   previewScale: '0.5',
 });
 
-const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '', musicName: '', musicVolume: 30, exportStatus: '等待导出', exportProgress: 0 }]);
+const tasks = ref([{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [overlayState], videoName: '', audioName: '', musicName: '', musicVolume: 30, musicStart: 0, musicLoop: true, exportStatus: '等待导出', exportProgress: 0 }]);
 const cloudOwnerId = ref(localStorage.getItem('videohat_owner_id') || 'local-user');
 const cloudStatus = ref('云端未同步');
 const cloudBusy = ref(false);
@@ -1558,6 +1581,7 @@ const hydrateTaskMediaFromLocalFolder = async (task) => {
   if (!task) return;
   if (!task.videoUrl && task.videoName) await hydrateNamedLocalMedia(task.videoName, 'video');
   if (!task.audioUrl && task.audioName) await hydrateNamedLocalMedia(task.audioName, 'audio');
+  if (!task.musicUrl && task.musicName) await hydrateNamedLocalMedia(task.musicName, 'music');
 };
 const syncSelectedTask = () => {
   const current = tasks.value[selectedTaskIndex.value];
@@ -1573,6 +1597,8 @@ const syncSelectedTask = () => {
   current.audioDuration = media.audioDuration;
   current.musicDuration = media.musicDuration;
   current.musicVolume = media.musicVolume;
+  current.musicStart = media.musicStart;
+  current.musicLoop = media.musicLoop;
   current.videoFile = media.videoFile;
   current.audioFile = media.audioFile;
   current.musicFile = media.musicFile;
@@ -1581,6 +1607,7 @@ const syncSelectedTask = () => {
   current.musicAsset = media.musicAsset;
   current.videoDriveItem = media.videoDriveItem;
   current.audioDriveItem = media.audioDriveItem;
+  current.musicDriveItem = media.musicDriveItem;
 };
 
 const resetMediaElement = (element) => {
@@ -1609,15 +1636,18 @@ const applyTaskToEditor = async (task) => {
   media.audioDuration = task.audioDuration || 0;
   media.musicDuration = task.musicDuration || 0;
   media.musicVolume = Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : media.musicVolume;
+  media.musicStart = Number.isFinite(Number(task.musicStart)) ? Number(task.musicStart) : 0;
+  media.musicLoop = task.musicLoop !== false;
   media.videoAsset = task.videoAsset || null;
   media.audioAsset = task.audioAsset || null;
   media.musicAsset = task.musicAsset || null;
   media.videoDriveItem = task.videoDriveItem || null;
   media.audioDriveItem = task.audioDriveItem || null;
+  media.musicDriveItem = task.musicDriveItem || null;
   if (!media.videoUrl && media.videoAsset?.objectKey) media.videoUrl = assetUrl(media.videoAsset.ownerId || cloudOwnerId.value, media.videoAsset.objectKey);
   if (!media.audioUrl && media.audioAsset?.objectKey) media.audioUrl = assetUrl(media.audioAsset.ownerId || cloudOwnerId.value, media.audioAsset.objectKey);
   if (!media.musicUrl && media.musicAsset?.objectKey) media.musicUrl = assetUrl(media.musicAsset.ownerId || cloudOwnerId.value, media.musicAsset.objectKey);
-  if ((!media.videoUrl && media.videoName) || (!media.audioUrl && media.audioName)) await hydrateTaskMediaFromLocalFolder(task);
+  if ((!media.videoUrl && media.videoName) || (!media.audioUrl && media.audioName) || (!media.musicUrl && media.musicName)) await hydrateTaskMediaFromLocalFolder(task);
   task.videoUrl = media.videoUrl;
   task.audioUrl = media.audioUrl;
   task.musicUrl = media.musicUrl;
@@ -1646,7 +1676,7 @@ const applyTaskToEditor = async (task) => {
   }
   if (musicEl.value && media.musicUrl) {
     musicEl.value.preload = 'metadata';
-    musicEl.value.loop = true;
+    musicEl.value.loop = media.musicLoop !== false;
     musicEl.value.src = media.musicUrl;
     musicEl.value.load();
     await waitForMetadata(musicEl.value, 12000);
@@ -1666,8 +1696,9 @@ const rehydrateSelectedTaskMediaFromLocalFolder = async () => {
   if (!task) return false;
   const hadVideo = Boolean(media.videoUrl);
   const hadAudio = Boolean(media.audioUrl);
+  const hadMusic = Boolean(media.musicUrl);
   await hydrateTaskMediaFromLocalFolder(task);
-  const restored = (!hadVideo && Boolean(media.videoUrl)) || (!hadAudio && Boolean(media.audioUrl));
+  const restored = (!hadVideo && Boolean(media.videoUrl)) || (!hadAudio && Boolean(media.audioUrl)) || (!hadMusic && Boolean(media.musicUrl));
   if (restored) {
     await nextTick();
     drawPreview();
@@ -1695,6 +1726,7 @@ const addTaskFromCurrent = () => {
     overlays: [JSON.parse(JSON.stringify(overlayState))],
     videoUrl: media.videoUrl,
     audioUrl: media.audioUrl,
+    musicUrl: media.musicUrl,
     videoName: media.videoName,
     audioName: media.audioName,
     musicName: media.musicName,
@@ -1702,11 +1734,17 @@ const addTaskFromCurrent = () => {
     audioDuration: media.audioDuration,
     musicDuration: media.musicDuration,
     musicVolume: media.musicVolume,
+    musicStart: media.musicStart,
+    musicLoop: media.musicLoop,
+    videoFile: media.videoFile,
+    audioFile: media.audioFile,
+    musicFile: media.musicFile,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
     musicAsset: media.musicAsset,
     videoDriveItem: media.videoDriveItem,
     audioDriveItem: media.audioDriveItem,
+    musicDriveItem: media.musicDriveItem,
     exportStatus: '等待导出',
     exportProgress: 0,
   });
@@ -1715,7 +1753,7 @@ const addTaskFromCurrent = () => {
 
 const clearQueue = () => {
   if (!window.confirm('清空全部任务队列？')) return;
-  tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, videoUrl: media.videoUrl, audioUrl: media.audioUrl, videoFile: media.videoFile, audioFile: media.audioFile, videoAsset: media.videoAsset, audioAsset: media.audioAsset, exportStatus: '等待导出', exportProgress: 0 }];
+  tasks.value = [{ id: 'task_default', baseName: '当前 Reels 任务', overlays: [JSON.parse(JSON.stringify(overlayState))], videoName: media.videoName, audioName: media.audioName, musicName: media.musicName, videoUrl: media.videoUrl, audioUrl: media.audioUrl, musicUrl: media.musicUrl, videoFile: media.videoFile, audioFile: media.audioFile, musicFile: media.musicFile, videoAsset: media.videoAsset, audioAsset: media.audioAsset, musicAsset: media.musicAsset, musicVolume: media.musicVolume, musicStart: media.musicStart, musicLoop: media.musicLoop, exportStatus: '等待导出', exportProgress: 0 }];
   selectedTaskIndex.value = 0;
 };
 
@@ -1751,6 +1789,22 @@ const clearVideoFile = () => {
   videoEl.value.load();
 };
 
+const clearMusicFile = () => {
+  media.musicFile = null;
+  media.musicUrl = '';
+  media.musicName = '';
+  media.musicDuration = 0;
+  media.musicAsset = null;
+  media.musicDriveItem = null;
+  if (musicEl.value) {
+    musicEl.value.pause();
+    musicEl.value.removeAttribute('src');
+    musicEl.value.load();
+  }
+  syncSelectedTask();
+  scheduleLocalProjectSave();
+  drawPreview();
+};
 const likelyNeedsPreviewProxy = (file) => {
   if (!file) return false;
   const ext = fileExtension(file.name);
@@ -1835,27 +1889,31 @@ const processMediaFile = async (file, kind, options = {}) => {
     const [path] = WebAssetPool.registerFiles([file]);
     const url = WebAssetPool.getUrl(path);
     await rememberLocalMediaItem({ name: sourceName }, kind);
-    media.audioFile = file;
-    media.audioUrl = url;
-    media.audioName = displayName;
-    media.audioAsset = null;
-    audioEl.value.preload = 'metadata';
-    audioEl.value.src = url;
-    audioEl.value.load();
-    updateMediaProgress(0.35, '读取音频时长', file.name);
-    const result = await waitForMetadata(audioEl.value, 12000);
-    media.audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0;
-    if (!result.ok || !media.audioDuration) {
+    const target = kind === 'music'
+      ? { file: 'musicFile', url: 'musicUrl', name: 'musicName', asset: 'musicAsset', duration: 'musicDuration', element: musicEl.value, label: '背景音' }
+      : { file: 'audioFile', url: 'audioUrl', name: 'audioName', asset: 'audioAsset', duration: 'audioDuration', element: audioEl.value, label: '配音' };
+    media[target.file] = file;
+    media[target.url] = url;
+    media[target.name] = displayName;
+    media[target.asset] = null;
+    target.element.preload = 'metadata';
+    target.element.src = url;
+    target.element.loop = kind === 'music' ? media.musicLoop : false;
+    target.element.load();
+    updateMediaProgress(0.35, `读取${target.label}时长`, file.name);
+    const result = await waitForMetadata(target.element, 12000);
+    media[target.duration] = Number.isFinite(target.element.duration) ? target.element.duration : 0;
+    if (!result.ok || !media[target.duration]) {
       mediaProgress.value = 0;
       mediaEta.value = '';
-      mediaError.value = `浏览器无法读取这个音频：${file.name}。请换成 MP3、M4A 或 WAV。`;
-      media.audioUrl = '';
-      media.audioName = '';
-      media.audioDuration = 0;
-      audioEl.value.removeAttribute('src');
-      audioEl.value.load();
+      mediaError.value = `浏览器无法读取这个${target.label}：${file.name}。请换成 MP3、M4A 或 WAV。`;
+      media[target.url] = '';
+      media[target.name] = '';
+      media[target.duration] = 0;
+      target.element.removeAttribute('src');
+      target.element.load();
     } else {
-      updateMediaProgress(1, '音频已就绪', file.name);
+      updateMediaProgress(1, `${target.label}已就绪`, file.name);
     }
   }
 
@@ -1867,7 +1925,7 @@ const processMediaFile = async (file, kind, options = {}) => {
 };
 
 const chooseLocalMedia = async (kind) => {
-  const input = kind === 'video' ? videoFileInput.value : audioFileInput.value;
+  const input = kind === 'video' ? videoFileInput.value : (kind === 'music' ? musicFileInput.value : audioFileInput.value);
   if (!window.showOpenFilePicker) {
     input?.click();
     return;
@@ -1879,18 +1937,18 @@ const chooseLocalMedia = async (kind) => {
       : { 'audio/*': ['.mp3', '.m4a', '.wav', '.aac', '.ogg'] };
     const [handle] = await window.showOpenFilePicker({
       multiple: false,
-      types: [{ description: kind === 'video' ? 'VideoHat 视频素材' : 'VideoHat 音频素材', accept }],
+      types: [{ description: kind === 'video' ? 'VideoHat 视频素材' : (kind === 'music' ? 'VideoHat 背景音素材' : 'VideoHat 配音素材'), accept }],
     });
     if (!handle) return;
     await saveLocalMediaFileHandle(kind, handle);
     const file = await handle.getFile();
     if (kind === 'video') await ensureLocalFolderForSelectedVideo(file);
     await processMediaFile(file, kind, { sourceName: file.name, persistentFileHandle: true });
-    localDraftStatus.value = `${kind === 'video' ? '视频' : '音频'}文件授权已保存，刷新后会尝试自动恢复。`;
+    localDraftStatus.value = `${kind === 'video' ? '视频' : (kind === 'music' ? '背景音' : '配音')}文件授权已保存，刷新后会尝试自动恢复。`;
   } catch (error) {
     if (error?.name !== 'AbortError') {
       console.error(error);
-      mediaError.value = `选择本地${kind === 'video' ? '视频' : '音频'}失败：${error.message}`;
+      mediaError.value = `选择本地${kind === 'video' ? '视频' : (kind === 'music' ? '背景音' : '配音')}失败：${error.message}`;
     }
   }
 };
@@ -1964,6 +2022,7 @@ const useDriveMediaForCurrent = async (item) => {
     });
     await processMediaFile(file, item.kind);
     if (item.kind === 'video') media.videoDriveItem = item;
+    else if (item.kind === 'music') media.musicDriveItem = item;
     else media.audioDriveItem = item;
     syncSelectedTask();
     scheduleLocalProjectSave();
@@ -2243,11 +2302,18 @@ const renderLoop = () => {
   animationFrameId = requestAnimationFrame(renderLoop);
 };
 
+const musicTimeAt = (time) => {
+  const start = Math.max(0, Number(media.musicStart) || 0);
+  const duration = Number(media.musicDuration) || 0;
+  if (!duration) return 0;
+  if (media.musicLoop === false) return Math.min(duration, start + Math.max(0, time));
+  return (start + Math.max(0, time)) % duration;
+};
 const seekPreview = () => {
   const t = Math.min(previewTime.value, activeDuration.value);
   if (videoEl.value && media.videoUrl && media.videoDuration) videoEl.value.currentTime = t % media.videoDuration;
   if (audioEl.value && media.audioUrl && t <= media.audioDuration) audioEl.value.currentTime = t;
-  if (musicEl.value && media.musicUrl && media.musicDuration) musicEl.value.currentTime = t % media.musicDuration;
+  if (musicEl.value && media.musicUrl && media.musicDuration) musicEl.value.currentTime = musicTimeAt(t);
   drawPreview();
 };
 
@@ -2267,7 +2333,8 @@ const startPlayback = async () => {
   }
   if (musicEl.value && media.musicUrl) {
     musicEl.value.volume = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
-    musicEl.value.currentTime = media.musicDuration ? previewTime.value % media.musicDuration : 0;
+    musicEl.value.loop = media.musicLoop !== false;
+    musicEl.value.currentTime = media.musicDuration ? musicTimeAt(previewTime.value) : 0;
     await musicEl.value.play().catch(() => {});
   }
 };
@@ -2348,7 +2415,8 @@ const syncVideoForExport = (elapsed) => {
 
   const targetTime = elapsed % media.videoDuration;
   const drift = Math.abs((video.currentTime || 0) - targetTime);
-  if (!video.seeking && (video.ended || drift > 0.45)) {
+  const driftLimit = exportOptions.smoothFrameCapture ? 0.08 : 0.45;
+  if (!video.seeking && (video.ended || drift > driftLimit)) {
     video.currentTime = targetTime;
   }
   if (video.paused || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -2446,9 +2514,9 @@ const playExportMediaAt = async (time = 0) => {
     await audioEl.value.play().catch(() => {});
   }
   if (musicEl.value && media.musicUrl) {
-    musicEl.value.loop = true;
+    musicEl.value.loop = media.musicLoop !== false;
     musicEl.value.volume = Math.max(0, Math.min(1, Number(media.musicVolume || 0) / 100));
-    musicEl.value.currentTime = media.musicDuration ? time % media.musicDuration : 0;
+    musicEl.value.currentTime = media.musicDuration ? musicTimeAt(time) : 0;
     await musicEl.value.play().catch(() => {});
   }
 };
@@ -2457,7 +2525,10 @@ const pauseExportForHiddenPage = () => {
   if (!isExporting.value || !wasExporting || mediaRecorder?.state !== 'recording') return;
   exportPauseStartedAt = performance.now();
   try { mediaRecorder.pause(); } catch (_) {}
-  if (exportStopTimer) cancelAnimationFrame(exportStopTimer);
+  if (exportStopTimer) {
+    cancelAnimationFrame(exportStopTimer);
+    window.clearTimeout(exportStopTimer);
+  }
   exportStopTimer = 0;
   stopPlayback();
   exportStatus.value = '页面已隐藏，导出暂停中';
@@ -2472,7 +2543,10 @@ const resumeExportAfterHiddenPage = async () => {
   await playExportMediaAt(previewTime.value);
   try { mediaRecorder.resume(); } catch (_) {}
   exportStatus.value = '继续导出 ' + formatDuration(previewTime.value) + ' / ' + formatDuration(activeDuration.value);
-  if (activeExportTick) exportStopTimer = requestAnimationFrame(activeExportTick);
+  if (activeExportTick) {
+    if (exportOptions.smoothFrameCapture) exportStopTimer = window.setTimeout(activeExportTick, 0);
+    else exportStopTimer = requestAnimationFrame(activeExportTick);
+  }
 };
 
 const handleExportVisibilityChange = () => {
@@ -2534,7 +2608,7 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
 
   drawPreview({ fullResolution: true });
   await waitForNextPaint();
-  const stream = canvas.captureStream(exportOptions.fps || 30);
+  const stream = canvas.captureStream(exportOptions.smoothFrameCapture ? 0 : (exportOptions.fps || 30));
   if (recordingAudioTracks.length) {
     stream.addTrack(recordingAudioTracks[0]);
   }
@@ -2611,22 +2685,38 @@ const exportCurrentTask = async ({ confirmMp4 = true } = {}) => {
   exportStartedAt = performance.now();
   exportPausedTotalMs = 0;
   exportPauseStartedAt = 0;
+  const targetFps = Math.max(15, Math.min(60, Number(exportOptions.fps) || 30));
+  const frameStep = 1 / targetFps;
+  const totalFrames = Math.max(1, Math.ceil(duration * targetFps));
+  let frameIndex = 0;
+  const scheduleNextFrame = () => {
+    if (exportOptions.smoothFrameCapture) {
+      const nextDueAt = exportStartedAt + exportPausedTotalMs + (frameIndex * frameStep * 1000);
+      exportStopTimer = window.setTimeout(activeExportTick, Math.max(0, nextDueAt - performance.now()));
+    } else {
+      exportStopTimer = requestAnimationFrame(activeExportTick);
+    }
+  };
   activeExportTick = () => {
     if (!isExporting.value || mediaRecorder?.state === 'paused') return;
-    const elapsed = (performance.now() - exportStartedAt - exportPausedTotalMs) / 1000;
+    const elapsed = exportOptions.smoothFrameCapture
+      ? Math.min(duration, frameIndex * frameStep)
+      : (performance.now() - exportStartedAt - exportPausedTotalMs) / 1000;
     previewTime.value = Math.min(elapsed, duration);
     const recordProgressMax = exportOptions.format === 'mp4' ? 0.82 : 0.99;
     exportProgress.value = Math.min(recordProgressMax, (previewTime.value / duration) * recordProgressMax);
     exportStatus.value = `导出 ${formatDuration(previewTime.value)} / ${formatDuration(duration)}`;
     syncVideoForExport(elapsed);
     drawPreview({ fullResolution: true });
-    if (elapsed >= duration) {
+    stream.getVideoTracks()[0]?.requestFrame?.();
+    frameIndex += 1;
+    if (frameIndex > totalFrames || elapsed >= duration) {
       if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
       return;
     }
-    exportStopTimer = requestAnimationFrame(activeExportTick);
+    scheduleNextFrame();
   };
-  exportStopTimer = requestAnimationFrame(activeExportTick);
+  scheduleNextFrame();
 };
 
 const exportQueue = async () => {
@@ -2701,11 +2791,14 @@ const createLocalDraftPayload = () => ({
     audioDuration: media.audioDuration,
     musicDuration: media.musicDuration,
     musicVolume: media.musicVolume,
+    musicStart: media.musicStart,
+    musicLoop: media.musicLoop,
     videoAsset: media.videoAsset,
     audioAsset: media.audioAsset,
     musicAsset: media.musicAsset,
     videoDriveItem: media.videoDriveItem,
     audioDriveItem: media.audioDriveItem,
+    musicDriveItem: media.musicDriveItem,
     exportStatus: '等待导出',
     exportProgress: 0,
   },
@@ -2768,18 +2861,22 @@ const restoreLocalProjectDraft = async () => {
     media.audioDuration = Number(draft.media?.audioDuration) || 0;
     media.musicDuration = Number(draft.media?.musicDuration) || 0;
     media.musicVolume = Number.isFinite(Number(draft.media?.musicVolume)) ? Number(draft.media.musicVolume) : 30;
+    media.musicStart = Number.isFinite(Number(draft.media?.musicStart)) ? Number(draft.media.musicStart) : 0;
+    media.musicLoop = draft.media?.musicLoop !== false;
     media.videoAsset = draft.media?.videoAsset || null;
     media.audioAsset = draft.media?.audioAsset || null;
     media.musicAsset = draft.media?.musicAsset || null;
     media.videoDriveItem = draft.media?.videoDriveItem || null;
     media.audioDriveItem = draft.media?.audioDriveItem || null;
+    media.musicDriveItem = draft.media?.musicDriveItem || null;
     mediaPool.value = Array.isArray(draft.mediaPool) ? draft.mediaPool : [];
     localMediaItems.value = mergeLocalMediaItems(localMediaItems.value, Array.isArray(draft.localMediaItems) ? draft.localMediaItems : []);
     await applyTaskToEditor(tasks.value[selectedTaskIndex.value]);
     const restoredVideo = Boolean(media.videoUrl);
     const restoredAudio = Boolean(media.audioUrl);
+    const restoredMusic = Boolean(media.musicUrl);
     const savedAt = draft.savedAt ? formatCloudTime(draft.savedAt) : '';
-    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；${restoredVideo || restoredAudio ? '素材已从本地缓存重新挂载。' : '素材文件需要先授权同一个文件夹才能重新挂载。'}`;
+    localDraftStatus.value = `已恢复本地草稿${savedAt ? ` ${savedAt}` : ''}；${restoredVideo || restoredAudio || restoredMusic ? '素材已从本地缓存重新挂载。' : '素材文件需要先授权同一个文件夹才能重新挂载。'}`;
   } catch (error) {
     console.error(error);
     localDraftStatus.value = `本地草稿恢复失败：${error.message}`;
@@ -2886,6 +2983,7 @@ const templatePayloadFromCurrent = () => {
     kind: 'official-project-template',
     assets: {
       audio: media.audioAsset || null,
+      music: media.musicAsset || null,
     },
     tasks: payload.tasks.map((task) => ({
       ...task,
@@ -2933,25 +3031,38 @@ const applySelectedTemplate = async () => {
     Object.assign(exportOptions, template.payload.exportOptions || {});
     const templateTasks = template.payload.tasks?.length ? template.payload.tasks : [{ ...tasks.value[0], overlays: [template.payload.overlay || overlayState] }];
     const templateAudio = template.payload.assets?.audio || templateTasks.find((task) => task.audioAsset)?.audioAsset || null;
+    const templateMusic = template.payload.assets?.music || templateTasks.find((task) => task.musicAsset)?.musicAsset || null;
     const templateAudioName = normalizeOriginalMediaName(templateAudio?.fileName || templateAudio?.name || '');
+    const templateMusicName = normalizeOriginalMediaName(templateMusic?.fileName || templateMusic?.name || '');
     let missingCloudAudio = 0;
+    let missingCloudMusic = 0;
     tasks.value = templateTasks.map((task, index) => {
       const taskAudioName = normalizeOriginalMediaName(task.audioName || '');
+      const taskMusicName = normalizeOriginalMediaName(task.musicName || '');
       const canUseGlobalAudio = templateAudio && (!taskAudioName || taskAudioName === templateAudioName);
+      const canUseGlobalMusic = templateMusic && (!taskMusicName || taskMusicName === templateMusicName);
       const audioAsset = task.audioAsset || (canUseGlobalAudio ? templateAudio : null);
+      const musicAsset = task.musicAsset || (canUseGlobalMusic ? templateMusic : null);
       if (taskAudioName && !audioAsset) missingCloudAudio += 1;
+      if (taskMusicName && !musicAsset) missingCloudMusic += 1;
       return {
         ...task,
         ...currentVideo,
         audioAsset,
+        musicAsset,
         audioName: task.audioName || audioAsset?.fileName || '',
+        musicName: task.musicName || musicAsset?.fileName || '',
         audioDuration: audioAsset ? (task.audioDuration || 0) : 0,
+        musicDuration: musicAsset ? (task.musicDuration || 0) : 0,
         audioUrl: audioAsset?.objectKey ? assetUrl(audioAsset.ownerId || cloudOwnerId.value, audioAsset.objectKey) : '',
+        musicUrl: musicAsset?.objectKey ? assetUrl(musicAsset.ownerId || cloudOwnerId.value, musicAsset.objectKey) : '',
         audioFile: null,
+        musicFile: null,
         audioDriveItem: null,
+        musicDriveItem: null,
         id: `template_${Date.now()}_${index}`,
         baseName: task.baseName || `${template.title} ${index + 1}`,
-        exportStatus: audioAsset || !taskAudioName ? '等待导出' : '音频未绑定 R2，请重新发布模板',
+        exportStatus: (audioAsset || !taskAudioName) && (musicAsset || !taskMusicName) ? '等待导出' : '音频/背景音未绑定 R2，请重新发布模板',
         exportProgress: 0,
       };
     });
@@ -2959,8 +3070,9 @@ const applySelectedTemplate = async () => {
     await applyTaskToEditor(tasks.value[0]);
     syncSelectedTask();
     scheduleLocalProjectSave();
-    templateStatus.value = missingCloudAudio
-      ? `已套用工程模板：${template.title}，但 ${missingCloudAudio} 条音频没有绑定 R2。请管理员用新版重新上传音频并保存工程模板。`
+    const missingText = [missingCloudAudio ? `${missingCloudAudio} 条配音` : '', missingCloudMusic ? `${missingCloudMusic} 条背景音` : ''].filter(Boolean).join('，');
+    templateStatus.value = missingText
+      ? `已套用工程模板：${template.title}，但 ${missingText} 没有绑定 R2。请管理员用新版重新上传音频并保存工程模板。`
       : `已套用工程模板：${template.title}。请替换/选择自己的实拍视频后导出。`;
   } catch (error) {
     console.error(error);
@@ -2980,6 +3092,7 @@ const publishCurrentAsTemplate = async () => {
   try {
     const projectId = currentCloudProjectId.value || selectedCloudProjectId.value || 'official-template';
     const audioUploadTasks = tasks.value.filter((task) => task.audioFile && !task.audioAsset);
+    const musicUploadTasks = tasks.value.filter((task) => task.musicFile && !task.musicAsset);
     if (media.audioFile && !media.audioAsset && !audioUploadTasks.includes(tasks.value[selectedTaskIndex.value])) {
       audioUploadTasks.unshift(tasks.value[selectedTaskIndex.value]);
     }
@@ -2995,16 +3108,32 @@ const publishCurrentAsTemplate = async () => {
       }
     }
     if (media.audioFile && !media.audioAsset) {
-      templateProgress.value = 0.65;
-      templateStatus.value = '上传当前官方音频到 R2...';
+      templateProgress.value = 0.62;
+      templateStatus.value = '上传当前官方配音到 R2...';
       media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'template-audio', projectId })).asset;
+    }
+    for (let index = 0; index < musicUploadTasks.length; index += 1) {
+      const task = musicUploadTasks[index];
+      templateProgress.value = 0.62 + ((index + 1) / Math.max(1, musicUploadTasks.length)) * 0.08;
+      templateStatus.value = '上传官方背景音到 R2：' + (index + 1) + '/' + musicUploadTasks.length + ' ' + (task.musicName || task.musicFile.name);
+      task.musicAsset = (await uploadCloudAsset(cloudOwnerId.value, task.musicFile, { kind: 'template-music', projectId })).asset;
+      task.musicName = task.musicName || task.musicAsset.fileName || task.musicFile.name;
+      if (tasks.value[selectedTaskIndex.value] === task) {
+        media.musicAsset = task.musicAsset;
+        media.musicName = task.musicName;
+      }
+    }
+    if (media.musicFile && !media.musicAsset) {
+      templateProgress.value = 0.7;
+      templateStatus.value = '上传当前官方背景音到 R2...';
+      media.musicAsset = (await uploadCloudAsset(cloudOwnerId.value, media.musicFile, { kind: 'template-music', projectId })).asset;
     }
     syncSelectedTask();
     templateProgress.value = 0.72;
     templateStatus.value = '保存工程参数和表格任务到 D1...';
     const { template } = await saveOfficialTemplate(cloudOwnerId.value, adminToken.value, {
       title: templateTitle.value || tasks.value[selectedTaskIndex.value]?.baseName || '官方 Reels 工程模板',
-      description: `官方工程模板：${tasks.value.length} 条任务，${media.audioAsset ? '已绑定 R2 音频' : '未绑定音频'}`,
+      description: `官方工程模板：${tasks.value.length} 条任务，${media.audioAsset ? '已绑定 R2 配音' : '未绑定配音'}${media.musicAsset ? '，已绑定背景音' : ''}`,
       payload: templatePayloadFromCurrent(),
       isPublished: true,
     });
@@ -3076,6 +3205,10 @@ const uploadCurrentAssets = async () => {
       media.audioAsset = (await uploadCloudAsset(cloudOwnerId.value, media.audioFile, { kind: 'audio', projectId })).asset;
       uploaded.push(media.audioAsset);
     }
+    if (media.musicFile) {
+      media.musicAsset = (await uploadCloudAsset(cloudOwnerId.value, media.musicFile, { kind: 'music', projectId })).asset;
+      uploaded.push(media.musicAsset);
+    }
     syncSelectedTask();
     cloudStatus.value = uploaded.length ? `已上传 ${uploaded.length} 个素材到 R2` : '当前没有可上传的新素材';
   } catch (error) {
@@ -3135,11 +3268,21 @@ const loadSelectedCloudProject = async () => {
   if (!project?.payload) return;
   currentCloudProjectId.value = project.id;
   Object.assign(exportOptions, project.payload.exportOptions || {});
-  tasks.value = project.payload.tasks || tasks.value;
-  media.videoAsset = project.payload.assets?.video || tasks.value[0]?.videoAsset || null;
-  media.audioAsset = project.payload.assets?.audio || tasks.value[0]?.audioAsset || null;
+  const projectVideoAsset = project.payload.assets?.video || null;
+  const projectAudioAsset = project.payload.assets?.audio || null;
+  const projectMusicAsset = project.payload.assets?.music || null;
+  tasks.value = (project.payload.tasks || tasks.value).map((task) => ({
+    ...task,
+    videoAsset: task.videoAsset || projectVideoAsset || null,
+    audioAsset: task.audioAsset || projectAudioAsset || null,
+    musicAsset: task.musicAsset || projectMusicAsset || null,
+  }));
+  media.videoAsset = projectVideoAsset || tasks.value[0]?.videoAsset || null;
+  media.audioAsset = projectAudioAsset || tasks.value[0]?.audioAsset || null;
+  media.musicAsset = projectMusicAsset || tasks.value[0]?.musicAsset || null;
   media.videoUrl = media.videoAsset?.objectKey ? assetUrl(media.videoAsset.ownerId || cloudOwnerId.value, media.videoAsset.objectKey) : '';
   media.audioUrl = media.audioAsset?.objectKey ? assetUrl(media.audioAsset.ownerId || cloudOwnerId.value, media.audioAsset.objectKey) : '';
+  media.musicUrl = media.musicAsset?.objectKey ? assetUrl(media.musicAsset.ownerId || cloudOwnerId.value, media.musicAsset.objectKey) : '';
   selectedTaskIndex.value = 0;
   await applyTaskToEditor(tasks.value[0]);
   cloudStatus.value = `已加载：${project.title}`;
@@ -3160,6 +3303,8 @@ const handleGeneratedTasks = (generatedTasks) => {
     audioDuration: media.audioDuration,
     musicDuration: media.musicDuration,
     musicVolume: media.musicVolume,
+    musicStart: media.musicStart,
+    musicLoop: media.musicLoop,
   };
   const nextTasks = generatedTasks.map((task) => {
     const hasVideoName = Boolean(task.videoName);
@@ -3178,6 +3323,8 @@ const handleGeneratedTasks = (generatedTasks) => {
       audioDuration: task.audioDuration || inherited.audioDuration,
       musicDuration: task.musicDuration || inherited.musicDuration,
       musicVolume: Number.isFinite(Number(task.musicVolume)) ? Number(task.musicVolume) : inherited.musicVolume,
+      musicStart: Number.isFinite(Number(task.musicStart)) ? Number(task.musicStart) : (inherited.musicStart || 0),
+      musicLoop: task.musicLoop !== false,
       exportStatus: '等待导出',
       exportProgress: 0,
     };
@@ -3247,7 +3394,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
-  if (exportStopTimer) cancelAnimationFrame(exportStopTimer);
+  if (exportStopTimer) {
+    cancelAnimationFrame(exportStopTimer);
+    window.clearTimeout(exportStopTimer);
+  }
   if (localDraftTimer) window.clearTimeout(localDraftTimer);
   document.removeEventListener('visibilitychange', handleExportVisibilityChange);
   releaseExportWakeLock();

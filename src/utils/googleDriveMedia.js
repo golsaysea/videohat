@@ -65,7 +65,7 @@ const normalizePickerDoc = (doc, kind) => ({
 export const openDrivePicker = async ({ token, kind = 'video' }) => {
   ensureGoogleDriveConfigured();
   await ensurePicker();
-  const mimeTypes = kind === 'audio'
+  const mimeTypes = kind === 'audio' || kind === 'music'
     ? 'audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/aac,audio/ogg'
     : 'video/mp4,video/quicktime,video/webm,video/x-m4v';
   return new Promise((resolve, reject) => {
