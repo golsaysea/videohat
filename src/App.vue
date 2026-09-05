@@ -1079,6 +1079,12 @@ const durationModeOptions = [
   { value: 'video', label: '按视频时长' },
   { value: 'custom', label: '自定义时长' },
 ];
+const normalizeLoadedExportOptions = () => {
+  const allowed = new Set(['auto', 'audio', 'video', 'custom']);
+  if (!allowed.has(exportOptions.durationMode) || exportOptions.durationMode === 'video') {
+    exportOptions.durationMode = 'auto';
+  }
+};
 const fitModeOptions = [
   { value: 'cover', label: '铺满裁剪' },
   { value: 'contain', label: '完整留边' },
@@ -2846,6 +2852,7 @@ const restoreLocalProjectDraft = async () => {
       return;
     }
     Object.assign(exportOptions, draft.exportOptions || {});
+    normalizeLoadedExportOptions();
     tasks.value = draft.tasks;
     selectedTaskIndex.value = Math.min(Number(draft.selectedTaskIndex) || 0, tasks.value.length - 1);
     media.videoFile = null;
@@ -3029,6 +3036,7 @@ const applySelectedTemplate = async () => {
       videoDriveItem: media.videoDriveItem,
     };
     Object.assign(exportOptions, template.payload.exportOptions || {});
+    normalizeLoadedExportOptions();
     const templateTasks = template.payload.tasks?.length ? template.payload.tasks : [{ ...tasks.value[0], overlays: [template.payload.overlay || overlayState] }];
     const templateAudio = template.payload.assets?.audio || templateTasks.find((task) => task.audioAsset)?.audioAsset || null;
     const templateMusic = template.payload.assets?.music || templateTasks.find((task) => task.musicAsset)?.musicAsset || null;
@@ -3268,6 +3276,7 @@ const loadSelectedCloudProject = async () => {
   if (!project?.payload) return;
   currentCloudProjectId.value = project.id;
   Object.assign(exportOptions, project.payload.exportOptions || {});
+  normalizeLoadedExportOptions();
   const projectVideoAsset = project.payload.assets?.video || null;
   const projectAudioAsset = project.payload.assets?.audio || null;
   const projectMusicAsset = project.payload.assets?.music || null;
